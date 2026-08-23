@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "yolocut": {
+      "type": "http",
+      "url": "http://localhost:5199/api/external-mcp/mcp",
+      "headers": {
+        "x-yolocut-mcp-client": "claude-code",
+        "x-yolocut-mcp-surface": "external"
+      }
+    }
+  }
+}

@@ -1,0 +1,518 @@
+/* YoloCut application chrome — binding contract: DESIGN.md (macos-vibrancy). */
+:root {
+  --cc-font-heading: Georgia, "Times New Roman", serif;
+  --cc-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --cc-font-mono: "SF Mono", Menlo, Consolas, ui-monospace, monospace;
+  --cc-radius-control: 8px;
+  --cc-radius-panel: 12px;
+  --cc-focus-ring: rgba(10, 132, 255, 0.72);
+}
+
+html,
+body,
+#root {
+  background: var(--cc-bg);
+  color: var(--cc-text);
+  font-family: var(--cc-font-ui);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--cc-font-ui);
+}
+
+code,
+pre,
+kbd,
+samp,
+time,
+.cc-mono {
+  font-family: var(--cc-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+h1,
+h2,
+h3,
+.cc-panel-heading,
+.cc-dialog-title,
+.cc-settings-pane-title,
+.cc-chat-onboarding h2 {
+  color: var(--cc-text-strong);
+  font-family: var(--cc-font-heading);
+  font-weight: 600;
+}
+
+:where(button, input, select, textarea, a, [role="button"], [role="tab"]) {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+:where(button, [role="button"], [role="tab"]):active:not(:disabled) {
+  opacity: 0.8;
+}
+
+:where(button, input, select, textarea, a, [role="button"], [role="tab"]):focus-visible {
+  outline: 2px solid var(--cc-focus-ring);
+  outline-offset: 1px;
+}
+
+:where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+  border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-control);
+  background: var(--cc-bg);
+  color: var(--cc-text);
+}
+
+:where(input, textarea)::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+:where(input, select, textarea):hover {
+  border-color: var(--cc-border-light);
+}
+
+:where(input, select, textarea):focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.cc-dashboard-shell :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea),
+.cc-editor-shell :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]), select, textarea) {
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-control) !important;
+  background: var(--cc-bg) !important;
+  color: var(--cc-text) !important;
+}
+
+/* App-level chrome uses separators for depth; legacy shadows and CSS motion
+ * are suppressed without touching frame-driven video/template rendering. */
+.cc-dashboard-shell *,
+.cc-editor-shell :where(*):not(.cc-preview-canvas, .cc-preview-canvas *, .cc-authored-preview, .cc-authored-preview *) {
+  box-shadow: none !important;
+}
+
+.cc-dashboard-shell *,
+.cc-editor-shell :where(*):not(.cc-preview-canvas, .cc-preview-canvas *, .cc-authored-preview, .cc-authored-preview *) {
+  animation: none !important;
+  transition-property: color, background-color, border-color, opacity !important;
+  transition-duration: 200ms !important;
+  transition-timing-function: ease-out !important;
+}
+
+.cc-dashboard-shell :where(button, input, select, textarea),
+.cc-editor-shell :where(button, input, select, textarea) {
+  border-radius: var(--cc-radius-control);
+}
+
+.cc-dashboard-shell :where(article, section),
+.cc-editor-shell :where(.cc-modal, [role="dialog"]) {
+  border-width: 1px;
+}
+
+.cc-primary-action,
+.cc-secondary-action {
+  border: 1px solid var(--cc-border-light) !important;
+  border-radius: var(--cc-radius-control) !important;
+  background: var(--cc-panel-alt) !important;
+  color: var(--cc-text-strong) !important;
+}
+
+.cc-primary-action:hover:not(:disabled),
+.cc-secondary-action:hover:not(:disabled) {
+  background: var(--cc-hover) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+:where(
+  .cc-text-preset-add,
+  .cc-modal button.primary,
+  .cc-caption-preset-name-row button:first-of-type,
+  .cc-export-cta,
+  .cc-proposal-apply,
+  .cc-widget-submit,
+  .cc-tx-btn.active,
+  .cc-tx-btn.primary,
+  .cc-cap-btn.primary,
+  .cc-insp-btn.primary,
+  .cc-audiofx-btn.primary,
+  .cc-music-analysis-action,
+  .cc-scene-button.primary,
+  .cc-tracking-dialog > footer button.primary,
+  .cc-semantic-panel button.primary,
+  .cc-mobile-upload-dialog footer button
+) {
+  border: 1px solid var(--cc-border-light) !important;
+  border-radius: var(--cc-radius-control) !important;
+  background: var(--cc-panel-alt) !important;
+  color: var(--cc-text-strong) !important;
+}
+
+:where(
+  .cc-text-preset-add,
+  .cc-modal button.primary,
+  .cc-caption-preset-name-row button:first-of-type,
+  .cc-export-cta,
+  .cc-proposal-apply,
+  .cc-widget-submit,
+  .cc-tx-btn.active,
+  .cc-tx-btn.primary,
+  .cc-cap-btn.primary,
+  .cc-insp-btn.primary,
+  .cc-audiofx-btn.primary,
+  .cc-music-analysis-action,
+  .cc-scene-button.primary,
+  .cc-tracking-dialog > footer button.primary,
+  .cc-semantic-panel button.primary,
+  .cc-mobile-upload-dialog footer button
+):hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background: var(--cc-hover) !important;
+}
+
+.cc-caption-preset-del:hover {
+  background: var(--cc-panel-alt) !important;
+  color: var(--cc-danger) !important;
+}
+
+/* Dashboard */
+.cc-dashboard-shell {
+  isolation: isolate;
+  background: var(--cc-bg);
+}
+
+.cc-dashboard-titlebar,
+.cc-topbar {
+  border-bottom: 1px solid var(--cc-border) !important;
+  background: color-mix(in srgb, var(--cc-bg) 80%, transparent) !important;
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.cc-dashboard-main {
+  background: var(--cc-bg);
+}
+
+.cc-dashboard-container {
+  padding: 32px 24px 80px !important;
+}
+
+.cc-dashboard-toolbar h1 {
+  font-family: var(--cc-font-heading);
+  font-size: 24px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em;
+}
+
+.cc-dashboard-model-card,
+.cc-project-card,
+.cc-new-project-card {
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-panel) !important;
+  background: var(--cc-panel) !important;
+}
+
+.cc-project-card,
+.cc-new-project-card {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+
+.cc-project-card:hover,
+.cc-new-project-card:hover {
+  border-color: var(--cc-border-light) !important;
+  background: var(--cc-panel) !important;
+}
+
+.cc-project-thumbnail {
+  border-bottom: 1px solid var(--cc-border) !important;
+  border-radius: 0 !important;
+  background: var(--cc-bg) !important;
+}
+
+.cc-account-placeholder {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+  margin-left: 4px;
+  border: 1px solid var(--cc-border-light);
+  border-radius: 7px;
+  background: var(--cc-panel-alt);
+  color: var(--cc-text-muted);
+}
+
+/* Editor ownership surfaces */
+.cc-editor-shell {
+  background: var(--cc-bg) !important;
+}
+
+.cc-main-tabs,
+.cc-chat-panel,
+.cc-settings-sidebar {
+  border-color: var(--cc-border) !important;
+  background: color-mix(in srgb, var(--cc-bg) 80%, transparent) !important;
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
+.cc-library-panel,
+.cc-library-content,
+.cc-preview-panel,
+.cc-inspector,
+.cc-workspace-timeline,
+.cc-timeline,
+.cc-settings-dialog {
+  background: var(--cc-panel) !important;
+}
+
+.cc-library-panel,
+.cc-chat-panel,
+.cc-inspector,
+.cc-workspace-timeline,
+.cc-preview-header,
+.cc-chat-header,
+.cc-insp-header,
+.cc-insp-tabs,
+.cc-timeline-toolbar,
+.cc-timeline-tabs {
+  border-width: 1px !important;
+  border-color: var(--cc-border) !important;
+}
+
+.cc-main-tab,
+.cc-settings-nav-row,
+.cc-export-tab,
+.cc-insp-tabs button {
+  border: 1px solid transparent !important;
+  border-radius: var(--cc-radius-control) !important;
+  color: var(--cc-text-muted) !important;
+}
+
+.cc-main-tab:hover,
+.cc-settings-nav-row:hover,
+.cc-export-tab:hover,
+.cc-insp-tabs button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--cc-text-strong) !important;
+}
+
+.cc-main-tab.selected,
+.cc-settings-nav-row.active,
+.cc-export-tab.active,
+.cc-insp-tabs button.active {
+  border-color: var(--cc-border-light) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: var(--cc-text-strong) !important;
+}
+
+.cc-chat-onboarding h2 {
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.cc-chat-starter-icon,
+.cc-chat-scroll-navigation,
+.cc-chat-popover,
+.cc-media-popover,
+.cc-track-create-menu,
+.cc-caption-cue-menu,
+.cc-caption-style-menu,
+.cc-caption-language-menu,
+.cc-transcript-viewer-panel {
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-control) !important;
+  background: var(--cc-panel-alt) !important;
+  box-shadow: none !important;
+}
+
+.cc-resource-card,
+.cc-text-preset,
+.cc-audiofx-card,
+.cc-export-qa-card,
+.cc-tx-section,
+.cc-insp-scope {
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-panel) !important;
+  background: var(--cc-panel) !important;
+}
+
+.cc-resource-thumb-placeholder,
+.cc-audiofx-thumb,
+.cc-clip-overlap-region,
+.cc-tx-nav,
+.cc-bg-fill-preview {
+  background-image: none !important;
+}
+
+.cc-resource-thumb-placeholder,
+.cc-audiofx-thumb,
+.cc-bg-fill-preview {
+  background-color: var(--cc-panel-alt) !important;
+}
+
+.cc-clip-overlap-region {
+  border-inline: 1px solid var(--cc-border-light);
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.cc-tx-nav {
+  background-color: var(--cc-panel) !important;
+}
+
+.cc-insp-range::-webkit-slider-runnable-track,
+.cc-insp-range::-moz-range-track {
+  border-radius: 2px;
+  background: var(--cc-border-light) !important;
+}
+
+.cc-insp-range::-webkit-slider-thumb,
+.cc-insp-range::-moz-range-thumb {
+  background: var(--cc-accent);
+}
+
+/* Dialogs and state surfaces */
+.cc-settings-overlay,
+.cc-export-overlay,
+.cc-modal-overlay {
+  background: rgba(0, 0, 0, 0.62) !important;
+}
+
+.cc-settings-dialog,
+.cc-export-panel,
+.cc-modal,
+.cc-mobile-upload-dialog,
+.cc-scene-dialog,
+.cc-tracking-dialog {
+  border: 1px solid var(--cc-border-light) !important;
+  border-radius: var(--cc-radius-panel) !important;
+  background: var(--cc-panel) !important;
+  box-shadow: none !important;
+}
+
+.cc-settings-header,
+.cc-settings-footer,
+.cc-export-header,
+.cc-export-footer {
+  border-color: var(--cc-border) !important;
+  background: var(--cc-panel) !important;
+}
+
+.cc-settings-vendors,
+.cc-export-sidebar {
+  border-color: var(--cc-border) !important;
+  background: var(--cc-bg) !important;
+}
+
+.cc-md pre,
+.cc-md code,
+.cc-settings-dialog code {
+  border: 1px solid var(--cc-border) !important;
+  border-radius: var(--cc-radius-control) !important;
+  background: var(--cc-bg) !important;
+  color: var(--cc-text-muted) !important;
+  font-family: var(--cc-font-mono) !important;
+}
+
+.cc-media-error,
+.cc-export-error,
+[role="alert"] {
+  color: var(--cc-danger);
+}
+
+.cc-asset-transcribe-spinner {
+  border: 1px solid var(--cc-border-light) !important;
+  border-top-color: var(--cc-accent) !important;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border-radius: var(--cc-radius-control);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+@media (max-width: 760px) {
+  .cc-dashboard-titlebar {
+    padding-inline: 16px !important;
+  }
+
+  .cc-dashboard-titlebar svg[aria-label="YoloCut"] {
+    width: 98px;
+    height: auto;
+  }
+
+  .cc-dashboard-subtitle,
+  .cc-dashboard-header-links,
+  .cc-dashboard-shortcuts,
+  .cc-dashboard-skin,
+  .cc-dashboard-storage {
+    display: none !important;
+  }
+
+  .cc-dashboard-actions {
+    gap: 2px !important;
+  }
+
+  .cc-dashboard-container {
+    padding: 24px 16px 64px !important;
+  }
+
+  .cc-dashboard-toolbar {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .cc-dashboard-toolbar > span:last-child {
+    width: 100%;
+    flex-wrap: wrap;
+    margin-left: 0 !important;
+  }
+
+  .cc-dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .cc-storage-migration-banner {
+    align-items: stretch !important;
+    flex-wrap: wrap;
+  }
+
+  .cc-storage-migration-banner > span:first-child {
+    flex: 1 0 100% !important;
+  }
+
+  .cc-dashboard-model-card {
+    display: grid !important;
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .cc-dashboard-model-card > button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  :where(button, [role="button"], [role="tab"], input, select) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(button, input, select, textarea, a, [role="button"], [role="tab"]) {
+    transition-duration: 0.01ms !important;
+  }
+}

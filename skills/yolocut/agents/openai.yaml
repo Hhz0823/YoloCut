@@ -1,0 +1,16 @@
+interface:
+  display_name: "YoloCut"
+  short_description: "Connect and edit local YoloCut video projects"
+  brand_color: "#7C3AED"
+  default_prompt: "Use $yolocut to connect to YoloCut and inspect the selected video project."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "yolocut"
+      description: "YoloCut local editor MCP server"
+      transport: "streamable_http"
+      url: "http://localhost:5199/api/external-mcp/mcp"
+
+policy:
+  allow_implicit_invocation: true

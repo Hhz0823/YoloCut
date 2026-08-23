@@ -1,0 +1,57 @@
+.cc-settings-pane { container:settings-pane / inline-size; }
+.cc-local-voice-empty {
+  display:grid; grid-template-columns:32px minmax(0,1fr); gap:3px 10px; align-items:start;
+  padding:14px; border:1px dashed var(--cc-border-light); border-radius:6px; background:var(--cc-inset);
+}
+.cc-local-voice-empty > svg { grid-row:1 / 3; margin-top:1px; color:var(--cc-text-dim); }
+.cc-local-voice-empty strong { color:var(--cc-text); font-size:12px; font-weight:650; }
+.cc-local-voice-empty span { color:var(--cc-text-dim); font-size:11px; line-height:1.5; text-wrap:pretty; }
+.cc-local-voice-meta { display:flex; flex-direction:column; gap:6px; margin-top:8px; padding-top:7px; border-top:1px solid var(--cc-border); }
+.cc-local-voice-chip-row { display:flex; flex-wrap:wrap; gap:4px; }
+.cc-local-voice-chip {
+  display:inline-flex; align-items:center; min-height:19px; padding:1px 6px; border:1px solid var(--cc-border);
+  border-radius:4px; background:var(--cc-inset); color:var(--cc-text-muted); font-size:9.5px; line-height:1.25;
+}
+.cc-local-voice-chip[data-tone="warning"] {
+  border-color:color-mix(in srgb,var(--cc-gold) 48%,var(--cc-border)); color:var(--cc-gold);
+}
+.cc-local-voice-compatibility { display:flex; flex-wrap:wrap; gap:5px; }
+.cc-local-voice-compat {
+  display:inline-flex; align-items:center; gap:4px; min-height:22px; padding:2px 7px; border:1px solid var(--cc-border);
+  border-radius:4px; background:var(--cc-panel-alt); color:var(--cc-text-muted); font-size:10px;
+}
+.cc-local-voice-compat[data-status="verified"],.cc-local-voice-compat[data-status="supported"] {
+  border-color:color-mix(in srgb,var(--cc-success) 46%,var(--cc-border));
+  background:color-mix(in srgb,var(--cc-success) 9%,var(--cc-panel)); color:var(--cc-text-strong);
+}
+.cc-local-voice-compat[data-status="unsupported"] {
+  border-color:color-mix(in srgb,var(--cc-danger) 45%,var(--cc-border)); color:var(--cc-danger);
+}
+.cc-local-voice-runtime-status {
+  display:grid; grid-template-columns:1fr; gap:4px; padding:8px 9px; border:1px solid var(--cc-border);
+  border-radius:0 4px 4px 0; background:var(--cc-inset); font-size:11px; line-height:1.4;
+}
+.cc-local-voice-runtime-row { display:grid; grid-template-columns:92px minmax(0,1fr); gap:8px; color:var(--cc-text-dim); }
+.cc-local-voice-runtime-row > span:first-child { color:var(--cc-text-muted); font-family:SFMono-Regular,ui-monospace,SFMono-Regular,Menlo,monospace; }
+.cc-local-voice-runtime-row strong { color:var(--cc-text-strong); font-weight:650; }
+.cc-local-voice-runtime-status p { margin:2px 0 0; color:var(--cc-text-dim); font-size:9.5px; text-wrap:pretty; }
+.cc-local-voice-preferences { margin-top:4px; padding-top:14px; border-top:1px solid var(--cc-border); }
+.cc-local-voice-preferences header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.cc-local-voice-preferences h3 { margin:0; color:var(--cc-text); font-size:12.5px; font-weight:650; }
+.cc-local-voice-preferences header p { max-width:52ch; margin:3px 0 0; color:var(--cc-text-dim); font-size:11px; line-height:1.45; text-wrap:pretty; }
+.cc-local-voice-settings-status { margin:10px 0 0; padding:7px 9px; border-radius:4px; background:var(--cc-inset); color:var(--cc-text-dim); font-size:11px; line-height:1.45; }
+.cc-local-voice-settings-status[role="alert"] { color:var(--cc-danger); }
+.cc-local-voice-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 12px; margin-top:11px; }
+.cc-local-voice-field { min-width:0; display:flex; flex-direction:column; gap:5px; color:var(--cc-text-muted); font-size:11px; }
+.cc-local-voice-field select {
+  width:100%; height:30px; padding:0 28px 0 8px; border:1px solid var(--cc-border); border-radius:4px;
+  background:var(--cc-inset); color:var(--cc-text); outline:none;
+}
+.cc-local-voice-field select:focus-visible,.cc-local-voice-speed input:focus-visible { outline:2px solid var(--cc-accent); outline-offset:2px; }
+.cc-local-voice-field select:disabled,.cc-local-voice-speed input:disabled { opacity:.46; cursor:not-allowed; }
+.cc-local-voice-speed { display:grid; grid-template-columns:minmax(0,1fr) 46px; gap:8px; align-items:center; height:30px; }
+.cc-local-voice-speed input { width:100%; accent-color:var(--cc-accent); }
+.cc-local-voice-speed output { color:var(--cc-text); text-align:right; font-variant-numeric:tabular-nums; }
+@container settings-pane (max-width:440px) {
+  .cc-local-voice-form { grid-template-columns:1fr; }
+}

@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const main = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
+const preload = readFileSync(new URL('./preload.ts', import.meta.url), 'utf8');
+const root = readFileSync(new URL('../src/components/chat/AgentWindowRoot.tsx', import.meta.url), 'utf8');
+const transcriptRoot = readFileSync(new URL('../src/media/TranscriptWindowRoot.tsx', import.meta.url), 'utf8');
+const view = readFileSync(new URL('../src/components/chat/ChatPanelView.tsx', import.meta.url), 'utf8');
+const smokeProbe = readFileSync(new URL('./smoke-probe.ts', import.meta.url), 'utf8');
+const smoke = readFileSync(new URL('./smoke-agent-workbench.ts', import.meta.url), 'utf8');
+
+assert.match(main, /title: 'YoloCut Agent'/, 'native Agent window must have a product-specific title');
+assert.match(main, /const preferredWidth = 860/, 'native Agent window must default to a wide workspace');
+assert.match(main, /const preferredHeight = 640/, 'native Agent window must keep a compact landscape height');
+assert.match(main, /minWidth: 380/, 'native Agent window must remain usable when narrow');
+assert.match(main, /minHeight: 480/, 'native Agent window must retain a usable composer height');
+assert.match(main, /installDesktopPageGuards\(win, trustedOrigin\)/, 'detached window must keep trusted-origin guards');
+assert.match(main, /win\.on\('will-move'/, 'native dragging must publish a dock preview');
+assert.match(main, /win\.on\('moved'/, 'native dragging must dock after the move completes');
+assert.match(main, /nativeAgentDockDecision/, 'native dragging must use guarded corner-only dock geometry');
+assert.match(main, /screen\.getCursorScreenPoint\(\)/, 'native docking must follow the actual drag pointer');
+assert.match(main, /let nativeAgentDockArmed = false/, 'a newly detached window must not immediately re-dock');
+assert.match(preload, /agentWorkbench: \{/, 'preload must expose the isolated Agent workbench API');
+assert.match(root, /agentWindow: true/, 'detached renderer must declare its synced editor role');
+assert.match(root, /document\.title = 'YoloCut Agent'/, 'detached renderer must preserve a unique native automation title');
+assert.match(main, /title: '文字稿'/, 'native transcript window must start with a distinct title');
+assert.match(main, /\?transcript-window=1/, 'native transcript window must load the isolated transcript surface');
+assert.match(transcriptRoot, /document\.title = asset\?\.name/, 'transcript renderer must override the generic index title');
+assert.match(transcriptRoot, /YoloCut 文字稿/, 'transcript renderer title must remain product-specific');
+assert.match(root, /hostMode="detached"/, 'detached renderer must use the wide Agent presentation');
+assert.match(view, /data-cc-agent-dock=\{detached \? 'detached' : dockSide\}/, 'Agent panel must expose all three host states');
+assert.match(view, /data-cc-agent-drag-handle/, 'docked Agent header must expose an explicit tear-off handle');
+assert.match(view, /setPointerCapture\(pointerId\)/, 'tear-off dragging must retain pointer capture outside the handle');
+assert.match(view, /window\.addEventListener\('mouseup', finishMouse, true\)/, 'tear-off dragging must retain a capture-phase mouse-up fallback');
+assert.match(view, /window\.addEventListener\('blur', finishOnBlur\)/, 'window-exit tear-off must survive Electron blur ordering');
+assert.match(view, /screenX: lastPoint\.screenX, screenY: lastPoint\.screenY/, 'tear-off release must forward the last desktop position');
+assert.match(smokeProbe, /runDesktopAgentWorkbenchSmoke\(win\)/, 'desktop smoke must expose the native round-trip acceptance gate');
+assert.match(smoke, /trusted drag → left dock → blur tear-off → right dock → button detach/, 'native smoke must cover release, blur fallback, both docks, and the button fallback');
+assert.match(smoke, /Input\.dispatchMouseEvent/, 'native smoke must exercise trusted Chromium mouse input');
+assert.match(smoke, /type: 'mousePressed'/, 'native smoke must begin with a trusted mouse press');
+assert.match(smoke, /window\.innerWidth \* 0\.76/, 'native smoke must cover a short pull away from the docked rail');
+assert.match(smoke, /getBackgroundThrottling\(\), false/, 'detached Agent smoke must check the runtime heartbeat policy');
+
+console.log('agent-workbench-window.verify: native lifecycle and renderer host contract passed');
