@@ -10,6 +10,11 @@ import { CodexTurnManager } from './turn-manager.ts';
 import { mapCodexModels, parseCodexTurnRequest } from '../plugins/codex-agent.ts';
 import { KEY_NAMES, seedKeystore } from '../keystore.ts';
 
+async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition() && Date.now() < deadline) await delay(5);
+}
+
 seedKeystore({
   ...Object.fromEntries(KEY_NAMES.map((name) => [name, ''])),
   CODEX_REASONING_EFFORT: 'high',
@@ -221,7 +226,10 @@ try {
   assert.deepEqual(login, {
     type: 'chatgpt', loginId: 'login-1', authUrl: 'https://auth.openai.com/test',
   });
-  await delay(0);
+  // stdout can deliver the response and immediate completion notification in
+  // separate I/O turns under a saturated test runner. Keep this bounded so a
+  // genuinely stale pending login still fails instead of asserting one tick.
+  await waitFor(() => !client.loginPending);
   assert.equal(client.loginPending, false, 'a fast completion must not leave stale pending login state');
 
   await client.startLogin('chatgptDeviceCode');

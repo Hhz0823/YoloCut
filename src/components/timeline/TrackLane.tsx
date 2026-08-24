@@ -6,7 +6,7 @@ import { type Dispatch, type RefObject, type SetStateAction, useMemo } from 'rea
 import { theme, themeAlpha } from '../../theme';
 import { Icon } from '../icons';
 import {
-  TRANSITION_LABELS, isItemSelected, timelineTrackIds, trackKind,
+  TRANSITION_LABELS, isItemSelected, trackKind,
   type TimelineItem, type TimelineState, type TrackId, type TransitionItem, type TransitionType,
 } from '../../editor/types';
 import { upsertKeyframe } from '../../editor/keyframes';
@@ -34,6 +34,8 @@ import {
   type TimelineSelectionMovePreview,
 } from '../../captions/captionGroupMove';
 import { droppedFiles, hasExternalFiles } from '../../media/externalFileDrop';
+
+const EMPTY_TIMELINE_ITEMS: TimelineItem[] = [];
 
 /** corner chips so applied fx / lut / zoom / denoise / transition are visible on the clip */
 function ClipEffectBadges({
@@ -102,6 +104,7 @@ function ClipEffectBadges({
 
 interface TrackLaneProps {
   trackId: TrackId;
+  trackIndexById: ReadonlyMap<TrackId, number>;
   indexes: TimelineIndexes;
   state: TimelineState;
   commands: EditorCommands;
@@ -131,20 +134,22 @@ interface TrackLaneProps {
 }
 
 export function TrackLane({
-  trackId, state, commands, pointer, editMode, pickMode, locked, hidden, muted, px, rowHeight,
+  trackId, trackIndexById, state, commands, pointer, editMode, pickMode, locked, hidden, muted, px, rowHeight,
   visibleWindow, pinnedItemIds, selectionMovePreview, indexes, libDropTarget, setLibDropTarget,
   applyLibraryToClip, applyLibraryToTrack, rippleOnDrop, overwriteOnDrop,
   frameFromClientX, onContextMenu, onTransitionContextMenu, onTrackContextMenu, scrollRef, onDropExternalFiles,
 }: TrackLaneProps) {
   const t = useT();
   const { drag, penDrag, setPenDrag, startDrag, startPick, startMarquee } = pointer;
-  const trackIds = timelineTrackIds(state);
-  const items = indexes.itemsByTrack.get(trackId) ?? [];
+  const items = indexes.itemsByTrack.get(trackId) ?? EMPTY_TIMELINE_ITEMS;
   const previewPinnedItemIds = useMemo(() => {
     if (!selectionMovePreview?.itemIds.length) return pinnedItemIds;
     return new Set([...pinnedItemIds, ...selectionMovePreview.itemIds]);
   }, [pinnedItemIds, selectionMovePreview]);
-  const itemIndexById = new Map(items.map((item, index) => [item.id, index]));
+  const itemIndexById = useMemo(
+    () => new Map(items.map((item, index) => [item.id, index])),
+    [items],
+  );
   const renderedItems = useMemo(() => visibleTimelineItems(
     indexes.itemWindowsByTrack.get(trackId),
     visibleWindow,
@@ -166,7 +171,7 @@ export function TrackLane({
   const dragOffsetY = drag?.mode === 'move'
     && trackKind(state, drag.targetTrack) === trackKind(state, drag.baseTrack)
     && !state.tracks?.[drag.targetTrack]?.locked
-    ? (trackIds.indexOf(drag.targetTrack) - trackIds.indexOf(drag.baseTrack)) * rowHeight
+    ? ((trackIndexById.get(drag.targetTrack) ?? 0) - (trackIndexById.get(drag.baseTrack) ?? 0)) * rowHeight
     : 0;
   return (
     <div

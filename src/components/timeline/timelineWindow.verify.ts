@@ -7,6 +7,7 @@ import {
   intersectFrameRange,
   rulerTickWindow,
   timelineFrameWindow,
+  timelineTrackWindow,
   timelinePinnedItemIds,
   visibleTimelineItems,
 } from './timelineUtil';
@@ -44,6 +45,26 @@ const state: TimelineState = {
   assert.deepEqual(window, { startFrame: 294, endFrame: 994 });
   assert.deepEqual(intersectFrameRange(280, 40, window), { startFrame: 294, endFrame: 320 });
   assert.equal(intersectFrameRange(0, 20, window), null);
+}
+
+{
+  assert.deepEqual(timelineTrackWindow(0, 360, 60, 100, 60), {
+    startIndex: 0,
+    endIndex: 7,
+    offsetTop: 0,
+  });
+  assert.deepEqual(timelineTrackWindow(1_230, 360, 60, 100, 60), {
+    startIndex: 19,
+    endIndex: 28,
+    offsetTop: 1_140,
+  });
+  assert.deepEqual(timelineTrackWindow(0, 0, 60, 100), {
+    startIndex: 0,
+    endIndex: 12,
+    offsetTop: 0,
+  });
+  const huge = timelineTrackWindow(240_000, 720, 48, 10_000);
+  assert.ok(huge.endIndex - huge.startIndex <= 24, 'ten thousand tracks still mount only the viewport plus overscan');
 }
 
 {

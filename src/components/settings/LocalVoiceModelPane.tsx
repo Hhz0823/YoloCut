@@ -1,7 +1,7 @@
 import { useT } from '../../i18n/locale';
 import { Icon } from '../icons';
 import { LocalModelPackPane } from './LocalModelPackPane';
-import type { FieldCtx } from './settingsVendorPane';
+import type { FieldCtx } from './settingsFieldContext';
 import { modelValue } from './settingsSchema';
 import {
   installedLocalVoiceModels,

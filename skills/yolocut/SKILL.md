@@ -42,4 +42,4 @@ so existing projects and Agent configurations remain usable.
 
 ## Skill version
 
-`2026-08-23.2`
+`2026-08-24.1`

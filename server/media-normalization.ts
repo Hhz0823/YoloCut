@@ -8,15 +8,19 @@ import {
   isHardwareH264Encoder,
   probeEncoderQualityMode,
   resolveH264Encoder,
-  resolveHwDecodeArgs,
 } from './media-acceleration.ts';
-import { ffmpegBin, ffprobeBin } from './media-binaries.ts';
+import { ffmpegBin, runFfprobeFallback } from './media-binaries.ts';
 import {
   createNormalizeAdmission,
   normalizationAbortError,
   throwIfNormalizationAborted,
 } from './media-normalization-admission.ts';
-import { ffmpegThreadArgs, spawnMediaProcess } from './media-process.ts';
+import { mediaProcessArgs, spawnMediaProcess, type MediaToolKind } from './media-process.ts';
+import {
+  runVideoDecodeFallback,
+  type VideoDecodeAttempt,
+} from './media-decoder-fallback.ts';
+import { resolveRuntimeVideoDecodeAttempts } from './media-runtime-decode.ts';
 export {
   createNormalizeAdmission,
   normalizationAbortError,
@@ -87,10 +91,11 @@ function run(
   args: string[],
   timeoutMs: number,
   signal?: AbortSignal,
+  kind: MediaToolKind = 'ffmpeg',
 ): Promise<{ stdout: string; stderr: string }> {
   throwIfNormalizationAborted(signal);
   const deferred = Promise.withResolvers<{ stdout: string; stderr: string }>();
-  const child = spawnMediaProcess(cmd, [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnMediaProcess(cmd, mediaProcessArgs(kind, args), { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let settled = false;
@@ -210,16 +215,19 @@ export function rotationOf(video: Record<string, unknown>): number {
 
 
 export async function probeVideo(path: string, signal?: AbortSignal): Promise<ProbeMeta> {
-  const { stdout } = await run(
-    ffprobeBin(),
-    [
+  const { value: { stdout } } = await runFfprobeFallback((command) => (
+    run(
+      command,
+      [
       '-v', 'error',
       '-show_streams', '-show_format', '-of', 'json',
       path,
-    ],
-    30_000,
-    signal,
-  );
+      ],
+      30_000,
+      signal,
+      'ffprobe',
+    )
+  ));
   const data = JSON.parse(stdout || '{}') as {
     streams?: Array<Record<string, unknown>>;
     format?: { duration?: string; bit_rate?: string; size?: string };
@@ -273,6 +281,13 @@ function compatibleAudioCodec(codec: string): boolean {
 export interface NormalizeStreamPlan {
   transcodeVideo: boolean;
   transcodeAudio: boolean;
+}
+
+export interface NormalizeDecoderFallbackOptions {
+  /** Integration-test/advanced-runtime override. Production normally probes
+   * hardware plus the bundled decoder catalogue automatically. */
+  readonly attempts?: readonly VideoDecodeAttempt[];
+  readonly onAttempt?: (attempt: VideoDecodeAttempt) => void;
 }
 
 export function resolveStreamPlan(
@@ -403,6 +418,7 @@ export async function encodeNormalized(
   convertToCfr: boolean,
   streamPlan: NormalizeStreamPlan,
   signal?: AbortSignal,
+  decoderFallback?: NormalizeDecoderFallbackOptions,
 ): Promise<void> {
   const ffmpeg = ffmpegBin();
   // Resolve the encoder before building decode args: NVIDIA NVENC requires
@@ -410,11 +426,8 @@ export async function encodeNormalized(
   // "CreateInputBuffer failed" once the 64x64 probe bug is fixed.
   const preferred = await resolveH264Encoder(ffmpeg);
   throwIfNormalizationAborted(signal);
-  const commonArgs = [
+  const baseInputArgs = [
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-    ...(await resolveHwDecodeArgs(ffmpeg, preferred)),
-    '-i', inputPath, '-map', '0:v:0',
-    ...(meta.hasAudio ? ['-map', '0:a:0?'] : ['-an']),
   ];
   throwIfNormalizationAborted(signal);
   const audioArgs = !meta.hasAudio ? [] : streamPlan.transcodeAudio
@@ -422,18 +435,41 @@ export async function encodeNormalized(
     : ['-c:a', 'copy'];
   const outputArgs = ['-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', outputPath];
   if (!streamPlan.transcodeVideo) {
-    await run(ffmpeg, [...commonArgs, '-c:v', 'copy', ...audioArgs, ...outputArgs], FFMPEG_TIMEOUT_MS, signal);
+    await run(ffmpeg, [
+      ...baseInputArgs, '-i', inputPath, '-map', '0:v:0',
+      ...(meta.hasAudio ? ['-map', '0:a:0?'] : ['-an']),
+      '-c:v', 'copy', ...audioArgs, ...outputArgs,
+    ], FFMPEG_TIMEOUT_MS, signal);
     return;
   }
-  await encodeTranscodedVideo(
-    ffmpeg,
-    commonArgs,
-    audioArgs,
-    outputArgs,
-    { targetW, targetH, targetBitrate, targetFps, convertToCfr },
-    outputPath,
+  const decoderAttempts = decoderFallback?.attempts
+    ?? await resolveRuntimeVideoDecodeAttempts(meta.videoCodec, preferred);
+  await runVideoDecodeFallback(decoderAttempts, async (decoderAttempt) => {
+    throwIfNormalizationAborted(signal);
+    decoderFallback?.onAttempt?.(decoderAttempt);
+    const commonArgs = [
+      ...baseInputArgs, ...decoderAttempt.inputArgs,
+      '-i', inputPath, '-map', '0:v:0',
+      ...(meta.hasAudio ? ['-map', '0:a:0?'] : ['-an']),
+    ];
+    await encodeTranscodedVideo(
+      ffmpeg,
+      commonArgs,
+      audioArgs,
+      outputArgs,
+      { targetW, targetH, targetBitrate, targetFps, convertToCfr },
+      outputPath,
+      signal,
+    );
+  }, {
     signal,
-  );
+    cleanup: () => unlink(outputPath).catch(() => undefined),
+    onFailure(decoderAttempt) {
+      console.warn(
+        `[normalize-media] ${decoderAttempt.kind} decoder ${decoderAttempt.decoder} failed; trying next decoder`,
+      );
+    },
+  });
 }
 
 export interface NormalizeEncodeContext {

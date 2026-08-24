@@ -18,6 +18,13 @@ export interface PreviewProxySource {
   height: number;
   fps: number;
   codec: string;
+  container?: string;
+  extension?: string;
+  profile?: string;
+  pixelFormat?: string;
+  bitDepth?: number;
+  hasAlpha?: boolean;
+  bitrate?: number;
   longGop: boolean;
 }
 
@@ -46,12 +53,23 @@ export type PreviewProxyState = PreviewProxyReadiness
 interface ProxyEntry {
   response: PreviewProxyResponse | null;
   responseAt: number;
+  responsePressure: number;
+  requestedPressure: number;
   promise: Promise<void> | null;
   controller: AbortController | null;
   listeners: Set<() => void>;
-  force: boolean;
   autoQueued: boolean;
   lastAccess: number;
+}
+
+export interface PreviewProxyPlanningOptions {
+  readonly focusFrame?: number;
+  readonly beforeFrames?: number;
+  readonly afterFrames?: number;
+  readonly maxSources?: number;
+  readonly prefetchSources?: number;
+  readonly proxyConcurrency?: number;
+  readonly pressure?: number;
 }
 
 export const PREVIEW_PROXY_RETRY_MS = 5 * 60 * 1_000;
@@ -71,10 +89,11 @@ function proxyEntry(src: string): ProxyEntry {
     entry = {
       response: null,
       responseAt: 0,
+      responsePressure: 0,
+      requestedPressure: 1,
       promise: null,
       controller: null,
       listeners: new Set(),
-      force: false,
       autoQueued: false,
       lastAccess: 0,
     };
@@ -82,6 +101,24 @@ function proxyEntry(src: string): ProxyEntry {
   }
   touch(entry);
   return entry;
+}
+
+function normalizedPressure(value: unknown): number {
+  const requested = Math.max(1, Math.min(128, Math.ceil(Number(value) || 1)));
+  return [1, 2, 4, 8, 16, 32, 64, 128].find((level) => level >= requested) ?? 128;
+}
+
+function proxyResponseSatisfies(
+  entry: ProxyEntry,
+  force: boolean,
+  pressure: number,
+  now = Date.now(),
+): boolean {
+  if (!entry.response || entry.responsePressure < pressure) return false;
+  if (force && entry.response.proxy.status !== 'ready') return false;
+  if (entry.response.proxy.status !== 'failed') return true;
+  if (entry.response.proxy.reason === 'proxy-playback-failed') return true;
+  return now - entry.responseAt < PREVIEW_PROXY_RETRY_MS;
 }
 
 function pruneProxyEntries(): void {
@@ -115,23 +152,24 @@ function failedResponse(src: string, error: unknown): PreviewProxyResponse {
   };
 }
 
-async function loadProxy(src: string, force: boolean, entry: ProxyEntry): Promise<void> {
+async function loadProxy(src: string, force: boolean, entry: ProxyEntry, rawPressure = 1): Promise<void> {
   touch(entry);
+  entry.requestedPressure = Math.max(entry.requestedPressure, normalizedPressure(rawPressure));
+  const pressure = entry.requestedPressure;
   if (entry.promise) {
     await entry.promise;
-    if (force && !entry.force && entry.response?.proxy.status !== 'ready') await loadProxy(src, true, entry);
-    return;
+    return loadProxy(src, force, entry, pressure);
   }
-  if (entry.response && (!force || entry.response.proxy.status === 'ready')) {
-    const retryableFailure = entry.response.proxy.status === 'failed'
-      && entry.response.proxy.reason !== 'proxy-playback-failed'
-      && Date.now() - entry.responseAt >= PREVIEW_PROXY_RETRY_MS;
-    if (!retryableFailure) return;
+  if (proxyResponseSatisfies(entry, force, pressure)) return;
+  const previousResponse = entry.response;
+  const previousPressure = entry.responsePressure;
+  const keepReadyWhileUpgrading = previousResponse?.proxy.status === 'ready'
+    && previousPressure > 0 && previousPressure < pressure;
+  if (!keepReadyWhileUpgrading) {
+    entry.response = null;
+    notify(entry);
   }
-  entry.force = force;
-  entry.response = null;
-  notify(entry);
-  const query = `src=${encodeURIComponent(src)}${force ? '&force=1' : ''}`;
+  const query = `src=${encodeURIComponent(src)}&pressure=${pressure}${force ? '&force=1' : ''}`;
   const controller = new AbortController();
   entry.controller = controller;
   entry.promise = fetch(`/api/preview-proxy?${query}`, { signal: controller.signal })
@@ -139,11 +177,18 @@ async function loadProxy(src: string, force: boolean, entry: ProxyEntry): Promis
       if (!response.ok) throw new Error(await responseError(response));
       entry.response = await response.json() as PreviewProxyResponse;
       entry.responseAt = Date.now();
+      entry.responsePressure = pressure;
     })
     .catch((error) => {
       if (!controller.signal.aborted) {
-        entry.response = failedResponse(src, error);
-        entry.responseAt = Date.now();
+        if (keepReadyWhileUpgrading) {
+          entry.response = previousResponse;
+          entry.responsePressure = previousPressure;
+        } else {
+          entry.response = failedResponse(src, error);
+          entry.responseAt = Date.now();
+          entry.responsePressure = pressure;
+        }
       }
     })
     .finally(() => {
@@ -156,19 +201,20 @@ async function loadProxy(src: string, force: boolean, entry: ProxyEntry): Promis
   await entry.promise;
 }
 
-export function requestPreviewProxy(src: string, force = false): Promise<void> {
+export function requestPreviewProxy(src: string, force = false, pressure = 1): Promise<void> {
   if (!isPreviewable(src)) return Promise.resolve();
   const entry = proxyEntry(src);
   if (proxyScheduler.cancel(src)) entry.autoQueued = false;
-  return loadProxy(src, force, entry);
+  return loadProxy(src, force, entry, pressure);
 }
 
-function queuePreviewProxy(src: string, priority: number, force: boolean): void {
+function queuePreviewProxy(src: string, priority: number, force: boolean, pressure: number): void {
   if (!isPreviewable(src)) return;
   const entry = proxyEntry(src);
+  entry.requestedPressure = Math.max(entry.requestedPressure, normalizedPressure(pressure));
   proxyScheduler.enqueue(src, priority, async () => {
     entry.autoQueued = false;
-    await loadProxy(src, force, entry);
+    await loadProxy(src, force, entry, pressure);
   });
   entry.autoQueued = proxyScheduler.isQueued(src);
 }
@@ -241,9 +287,17 @@ function useQualitySnapshot() {
   return { mode, preview };
 }
 
-function useProxySources(sources: readonly string[]): number {
+function useProxySources(
+  sources: readonly string[],
+  options: Pick<PreviewProxyPlanningOptions, 'prefetchSources' | 'proxyConcurrency' | 'pressure'> = {},
+): number {
   const [revision, setRevision] = useState(0);
   const quality = useQualitySnapshot();
+  const pressure = normalizedPressure(options.pressure);
+  const prefetchSources = Math.max(1, Math.min(64, Math.floor(options.prefetchSources ?? 4)));
+  const proxyConcurrency = options.proxyConcurrency === undefined
+    ? null
+    : Math.max(1, Math.min(4, Math.floor(options.proxyConcurrency) || 1));
   // Timeline edits create new arrays. Keep ordering stable for priority updates
   // and membership stable for subscriptions, so moving clips can reprioritize
   // queued work without tearing down an in-flight multi-hour 4K proxy.
@@ -261,19 +315,36 @@ function useProxySources(sources: readonly string[]): number {
   }
   const subscribedSources = stableMembershipRef.current;
   useEffect(() => {
+    if (proxyConcurrency !== null) proxyScheduler.setConcurrency(proxyConcurrency);
+  }, [proxyConcurrency]);
+  useEffect(() => {
     const bump = () => setRevision((value) => value + 1);
     return subscribe(subscribedSources, bump);
   }, [subscribedSources]);
   useEffect(() => {
     if (shouldAutoRequestPreviewProxy(quality.mode, quality.preview)) {
-      prioritySources.forEach((src, priority) => queuePreviewProxy(src, priority, quality.preview === 'proxy'));
+      const force = quality.preview === 'proxy';
+      let occupied = 0;
+      for (const src of prioritySources) {
+        const entry = proxyEntry(src);
+        entry.requestedPressure = Math.max(entry.requestedPressure, pressure);
+        if (entry.promise || entry.autoQueued) occupied += 1;
+      }
+      let remaining = Math.max(0, prefetchSources - occupied);
+      for (let priority = 0; priority < prioritySources.length && remaining > 0; priority += 1) {
+        const src = prioritySources[priority]!;
+        const entry = proxyEntry(src);
+        if (entry.promise || entry.autoQueued || proxyResponseSatisfies(entry, force, pressure)) continue;
+        queuePreviewProxy(src, priority, force, pressure);
+        remaining -= 1;
+      }
     } else {
       for (const src of subscribedSources) {
         const entry = proxyEntries.get(src);
         if (entry?.autoQueued && proxyScheduler.cancel(src)) entry.autoQueued = false;
       }
     }
-  }, [prioritySources, subscribedSources, quality.mode, quality.preview]);
+  }, [prefetchSources, pressure, prioritySources, quality.mode, quality.preview, revision, subscribedSources]);
   useEffect(() => {
     if (!shouldAutoRequestPreviewProxy(quality.mode, quality.preview)) return undefined;
     const now = Date.now();
@@ -292,7 +363,7 @@ function useProxySources(sources: readonly string[]): number {
         if (entry?.response?.proxy.status === 'failed'
           && entry.response.proxy.reason !== 'proxy-playback-failed'
           && entry.responseAt + PREVIEW_PROXY_RETRY_MS <= retryNow) {
-          queuePreviewProxy(src, priority, quality.preview === 'proxy');
+          queuePreviewProxy(src, priority, quality.preview === 'proxy', pressure);
         }
       });
       // Recalculate the next failure's deadline. The queued request clears its
@@ -301,7 +372,7 @@ function useProxySources(sources: readonly string[]): number {
     };
     const timer = window.setTimeout(retry, Math.max(0, nextRetryAt - now));
     return () => window.clearTimeout(timer);
-  }, [prioritySources, subscribedSources, quality.mode, quality.preview, revision]);
+  }, [pressure, prioritySources, subscribedSources, quality.mode, quality.preview, revision]);
   // Re-resolve preview src when quality/preview-source mode flips even if proxy cache is quiet.
   useEffect(() => {
     setRevision((value) => value + 1);
@@ -309,12 +380,26 @@ function useProxySources(sources: readonly string[]): number {
   return revision;
 }
 
-function orderedVideoSources(items: TimelineState['items']): string[] {
+function orderedVideoSources(
+  items: TimelineState['items'],
+  options: Pick<PreviewProxyPlanningOptions, 'focusFrame' | 'beforeFrames' | 'afterFrames'> = {},
+): string[] {
   const seen = new Set<string>();
+  const focus = Number.isFinite(options.focusFrame) ? Math.max(0, Number(options.focusFrame)) : null;
+  const from = focus === null ? Number.NEGATIVE_INFINITY : focus - Math.max(0, Number(options.beforeFrames) || 0);
+  const to = focus === null ? Number.POSITIVE_INFINITY : focus + Math.max(1, Number(options.afterFrames) || 1);
+  const distance = (item: TimelineState['items'][number]): number => {
+    if (focus === null) return item.startFrame;
+    const end = item.startFrame + item.durationInFrames;
+    if (focus >= item.startFrame && focus < end) return 0;
+    return item.startFrame > focus ? item.startFrame - focus : focus - end + 0.5;
+  };
   return items
     .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.kind === 'video' && isPreviewable(item.src))
-    .sort((left, right) => left.item.startFrame - right.item.startFrame || left.index - right.index)
+    .filter(({ item }) => item.kind === 'video' && isPreviewable(item.src)
+      && item.startFrame < to && item.startFrame + item.durationInFrames > from)
+    .sort((left, right) => distance(left.item) - distance(right.item)
+      || left.item.startFrame - right.item.startFrame || left.index - right.index)
     .flatMap(({ item }) => {
       const src = item.src!;
       if (seen.has(src)) return [];
@@ -323,14 +408,46 @@ function orderedVideoSources(items: TimelineState['items']): string[] {
     });
 }
 
-export function orderedPreviewSourcesForTimeline(state: TimelineState): string[] {
-  return orderedVideoSources(state.items);
+export function orderedPreviewSourcesForTimeline(
+  state: TimelineState,
+  options: Pick<PreviewProxyPlanningOptions, 'focusFrame' | 'beforeFrames' | 'afterFrames'> = {},
+): string[] {
+  return orderedVideoSources(state.items, options);
+}
+
+export function previewDecodePressure(
+  state: TimelineState,
+  options: Pick<PreviewProxyPlanningOptions, 'focusFrame' | 'beforeFrames' | 'afterFrames'> = {},
+): number {
+  const events: Array<{ frame: number; delta: number }> = [];
+  const focus = Number.isFinite(options.focusFrame) ? Math.max(0, Number(options.focusFrame)) : null;
+  const from = focus === null ? Number.NEGATIVE_INFINITY : focus - Math.max(0, Number(options.beforeFrames) || 0);
+  const to = focus === null ? Number.POSITIVE_INFINITY : focus + Math.max(1, Number(options.afterFrames) || 1);
+  for (const item of state.items) {
+    if ((item.kind !== 'video' || !item.src) && item.kind !== 'sequence') continue;
+    if (state.tracks?.[item.track]?.hidden) continue;
+    const startFrame = Math.max(item.startFrame, from);
+    const endFrame = Math.min(item.startFrame + item.durationInFrames, to);
+    if (endFrame <= startFrame) continue;
+    const weight = item.kind === 'sequence' ? 2 : 1;
+    events.push({ frame: startFrame, delta: weight });
+    events.push({ frame: endFrame, delta: -weight });
+  }
+  events.sort((left, right) => left.frame - right.frame || left.delta - right.delta);
+  let active = 0;
+  let peak = 0;
+  for (const event of events) {
+    active += event.delta;
+    peak = Math.max(peak, active);
+  }
+  return normalizedPressure(Math.max(1, peak));
 }
 
 export function orderedPreviewSourcesForProject(
   project: ProjectDoc,
   activeTimelineId: string,
   reachableTimelineIds: readonly string[],
+  options: PreviewProxyPlanningOptions = {},
 ): string[] {
   const timelineOrder = [activeTimelineId, ...reachableTimelineIds.filter((id) => id !== activeTimelineId)];
   const seen = new Set<string>();
@@ -338,10 +455,14 @@ export function orderedPreviewSourcesForProject(
   for (const id of timelineOrder) {
     const timeline = project.timelines.find((candidate) => candidate.id === id);
     if (!timeline) continue;
-    for (const src of orderedVideoSources(timeline.items)) {
+    const sourceOptions = id === activeTimelineId ? options : {};
+    for (const src of orderedVideoSources(timeline.items, sourceOptions)) {
       if (seen.has(src)) continue;
       seen.add(src);
       sources.push(src);
+      if (sources.length >= Math.max(1, Math.floor(options.maxSources ?? Number.MAX_SAFE_INTEGER))) {
+        return sources;
+      }
     }
   }
   return sources;
@@ -403,7 +524,8 @@ export function usePreviewMediaSource(src: string | undefined, enabled = true) {
 
 export function usePreviewTimelineState(state: TimelineState) {
   const sources = useMemo(() => orderedPreviewSourcesForTimeline(state), [state]);
-  const revision = useProxySources(sources);
+  const pressure = previewDecodePressure(state);
+  const revision = useProxySources(sources, { pressure });
   const previewState = useMemo<TimelineState>(() => {
     void revision; // recompute when the proxy cache bumps (proxies live in module state)
     return resolveTimelinePreviewSources(state, (src) => (
@@ -419,25 +541,45 @@ export function usePreviewTimelineState(state: TimelineState) {
 }
 
 /** Resolve preview proxies across the complete reachable nested-sequence graph. */
-export function usePreviewProjectDoc(project: ProjectDoc, timelineId: string) {
+export function usePreviewProjectDoc(
+  project: ProjectDoc,
+  timelineId: string,
+  options: PreviewProxyPlanningOptions = {},
+) {
   const plan = useMemo(() => resolveTimelineRenderPlan(project, timelineId), [project, timelineId]);
   const reachable = useMemo(() => new Set(plan.timelineIds), [plan.timelineIds]);
+  const activeState = project.timelines.find((timeline) => timeline.id === timelineId)!;
+  const focusFrame = options.focusFrame;
+  const beforeFrames = options.beforeFrames;
+  const afterFrames = options.afterFrames;
+  const maxSources = options.maxSources;
+  const prefetchSources = options.prefetchSources;
+  const proxyConcurrency = options.proxyConcurrency;
+  const pressure = normalizedPressure(options.pressure ?? previewDecodePressure(activeState, {
+    focusFrame, beforeFrames, afterFrames,
+  }));
   const sources = useMemo(
-    () => orderedPreviewSourcesForProject(project, timelineId, plan.timelineIds),
-    [project, timelineId, plan.timelineIds],
+    () => orderedPreviewSourcesForProject(project, timelineId, plan.timelineIds, {
+      focusFrame, beforeFrames, afterFrames, maxSources,
+    }),
+    [afterFrames, beforeFrames, focusFrame, maxSources, project, timelineId, plan.timelineIds],
   );
-  const revision = useProxySources(sources);
+  const sourceSet = useMemo(() => new Set(sources), [sources]);
+  const revision = useProxySources(sources, { prefetchSources, proxyConcurrency, pressure });
   const previewProject = useMemo<ProjectDoc>(() => {
     void revision; // recompute when the proxy cache bumps (proxies live in module state)
     return resolveProjectPreviewSources(project, reachable, (src) => (
-      resolvePreviewSrc(src, stateFor(src, shouldAutoRequestPreviewProxy()))
+      sourceSet.has(src)
+        ? resolvePreviewSrc(src, stateFor(src, shouldAutoRequestPreviewProxy()))
+        : src
     ));
-  }, [project, reachable, revision]);
+  }, [project, reachable, revision, sourceSet]);
   const state = previewProject.timelines.find((timeline) => timeline.id === timelineId)!;
   return {
     project: previewProject,
     state,
     plan,
+    pressure,
     proxies: sources.map((src) => ({ src, proxy: stateFor(src, shouldAutoRequestPreviewProxy()) })),
     requestFallback: (src: string) => { reportPreviewPlaybackFailure(src); },
   };
@@ -450,6 +592,7 @@ export function __previewProxyCacheStatsForVerify() {
 export function __resetPreviewProxyStateForVerify(): void {
   for (const entry of proxyEntries.values()) entry.controller?.abort();
   proxyScheduler.clear();
+  proxyScheduler.setConcurrency(1);
   proxyEntries.clear();
   accessSequence = 0;
 }

@@ -1,12 +1,14 @@
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { isSafeUploadName, resolveUploadFile } from '../media-dir.ts';
-import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
-import { resolveHwDecodeArgs } from '../media-acceleration.ts';
+import { ffmpegBin } from '../media-binaries.ts';
+import { runVideoDecodeFallback } from '../media-decoder-fallback.ts';
+import { spawnMediaProcess } from '../media-process.ts';
+import { probeVideoInfo } from '../media-probe.ts';
+import { resolveRuntimeVideoDecodeAttempts } from '../media-runtime-decode.ts';
 import {
   DEFAULT_MAX_SCENES,
   DEFAULT_MIN_SCENE_MS,
@@ -85,7 +87,7 @@ function runCapture(command: string, args: string[], options: CaptureOptions): P
       reject(abortError());
       return;
     }
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnMediaProcess(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -124,7 +126,7 @@ function runCapture(command: string, args: string[], options: CaptureOptions): P
 
 function runBuffer(command: string, args: string[], timeoutMs: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnMediaProcess(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const chunks: Buffer[] = [];
     let stderr = '';
     const timer = setTimeout(() => {
@@ -143,15 +145,6 @@ function runBuffer(command: string, args: string[], timeoutMs: number): Promise<
       else reject(new Error(`${command} exit ${code}: ${stderr.slice(-500)}`));
     });
   });
-}
-
-async function probeDurationMs(file: string, signal?: AbortSignal): Promise<number> {
-  const output = await runCapture(ffprobeBin(), [
-    '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file,
-  ], { timeoutMs: 30_000, signal });
-  const seconds = Number(output.trim());
-  if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('ffprobe duration failed');
-  return Math.round(seconds * 1000);
 }
 
 export function sceneAnalysisFps(durationMs: number): number {
@@ -198,7 +191,8 @@ export async function detectScenesInFile(
   const minSceneMs = Math.max(100, Math.min(60_000, Math.round(options.minSceneMs ?? DEFAULT_MIN_SCENE_MS)));
   const maxScenes = Math.max(1, Math.min(500, Math.round(options.maxScenes ?? DEFAULT_MAX_SCENES)));
   options.onProgress?.({ phase: 'probing', progress: 0.01, processedMs: 0, durationMs: 0 });
-  const durationMs = await probeDurationMs(file, options.signal);
+  const sourceProbe = await probeVideoInfo(file, { signal: options.signal, errorLabel: 'scene source' });
+  const durationMs = Math.round(sourceProbe.durationSeconds * 1000);
   const sampleFps = sceneAnalysisFps(durationMs);
   options.onProgress?.({ phase: 'detecting', progress: 0.05, processedMs: 0, durationMs });
   // Keep a second full-rate analysis branch alive so FFmpeg progress advances even
@@ -210,34 +204,39 @@ export async function detectScenesInFile(
   ].join(';');
   let progressBuffer = '';
   let lastProcessedMs = 0;
-  const output = await runCapture(ffmpegBin(), [
-    '-nostdin', '-hide_banner', '-loglevel', 'error',
-    ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)), '-i', file,
-    '-filter_complex', filter,
-    '-map', '[hits]', '-an', '-f', 'null', '-',
-    '-map', '[analysis_clock]', '-an',
-    '-progress', 'pipe:2', '-stats_period', '0.2', '-nostats', '-f', 'null', '-',
-  ], {
-    timeoutMs: DETECT_TIMEOUT_MS,
-    signal: options.signal,
-    onStderr(chunk) {
-      progressBuffer += chunk;
-      const lines = progressBuffer.split(/\r?\n/);
-      progressBuffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const processedMs = parseProgressTimeMs(line.trim());
-        if (processedMs === null || processedMs < lastProcessedMs) continue;
-        lastProcessedMs = processedMs;
-        const ratio = Math.max(0, Math.min(1, processedMs / durationMs));
-        options.onProgress?.({
-          phase: 'detecting',
-          progress: 0.05 + ratio * 0.9,
-          processedMs,
-          durationMs,
-        });
-      }
-    },
-  });
+  const attempts = await resolveRuntimeVideoDecodeAttempts(sourceProbe.video.codec);
+  const output = await runVideoDecodeFallback(attempts, (attempt) => {
+    progressBuffer = '';
+    lastProcessedMs = 0;
+    return runCapture(ffmpegBin(), [
+      '-nostdin', '-hide_banner', '-loglevel', 'error',
+      ...attempt.inputArgs, '-i', file,
+      '-filter_complex', filter,
+      '-map', '[hits]', '-an', '-f', 'null', '-',
+      '-map', '[analysis_clock]', '-an',
+      '-progress', 'pipe:2', '-stats_period', '0.2', '-nostats', '-f', 'null', '-',
+    ], {
+      timeoutMs: DETECT_TIMEOUT_MS,
+      signal: options.signal,
+      onStderr(chunk) {
+        progressBuffer += chunk;
+        const lines = progressBuffer.split(/\r?\n/);
+        progressBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const processedMs = parseProgressTimeMs(line.trim());
+          if (processedMs === null || processedMs < lastProcessedMs) continue;
+          lastProcessedMs = processedMs;
+          const ratio = Math.max(0, Math.min(1, processedMs / durationMs));
+          options.onProgress?.({
+            phase: 'detecting',
+            progress: 0.05 + ratio * 0.9,
+            processedMs,
+            durationMs,
+          });
+        }
+      },
+    });
+  }, { signal: options.signal });
   options.onProgress?.({ phase: 'finalizing', progress: 0.98, processedMs: durationMs, durationMs });
   const scenes = normalizeSceneCandidates(parseSceneMetadata(output), {
     threshold, minSceneMs, durationMs, maxScenes,
@@ -342,13 +341,14 @@ async function evidenceFrame(file: string, fileSize: number, timeMs: number): Pr
   const key = `${file}:${fileSize}:${Math.round(timeMs)}`;
   const cached = frameCache.get(key);
   if (cached) return cached;
-  const pending = runBuffer(ffmpegBin(), [
+  const attempts = await resolveRuntimeVideoDecodeAttempts();
+  const pending = runVideoDecodeFallback(attempts, (attempt) => runBuffer(ffmpegBin(), [
     '-nostdin', '-hide_banner', '-loglevel', 'error',
-    ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)),
+    ...attempt.inputArgs,
     '-ss', String(Math.max(0, timeMs) / 1000), '-i', file,
     '-frames:v', '1', '-vf', 'scale=320:-2:flags=fast_bilinear',
     '-c:v', 'mjpeg', '-q:v', '5', '-f', 'image2pipe', 'pipe:1',
-  ], 30_000).then((buffer) => {
+  ], 30_000)).then((buffer) => {
     if (!buffer.length) throw new Error('no frame extracted');
     return buffer;
   }).catch((error) => {

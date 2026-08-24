@@ -3,6 +3,8 @@ import { Player, Thumbnail, type CallbackListener, type PlayerRef } from '@remot
 import { theme, themeAlpha } from '../theme';
 import { TimelineComposition } from '../editor/TimelineComposition';
 import type { SelectedPreviewStatus, SelectedPreviewStatusListener } from '../gl/previewAdapter';
+import { configureCubeCacheBudget } from '../gl/fx/cube';
+import { VIDEO_FILE_PICKER_ACCEPT } from '../../shared/media-file-extensions';
 import {
   captionTrackEntries,
   type ProjectDoc,
@@ -34,6 +36,8 @@ import {
 import type { SlipPreview } from '../editor/slip';
 import {
   adaptivePreviewPremountFrames,
+  mediaRuntimeBudgets,
+  previewProxyPlanning,
   useMediaPerformanceProfile,
   type ClientMediaPerformanceProfile,
 } from '../media/mediaPerformance';
@@ -72,12 +76,15 @@ function PreviewSourceToggle({ performance }: { performance: ClientMediaPerforma
   const acceleration = performance?.ffmpeg.decoder.zeroCopy
     ? t('NVDEC → CUDA 缩放 → NVENC')
     : performance?.ffmpeg.encoder.hardware ? performance.ffmpeg.encoder.label : t('软件编码回退');
+  const decoderFallback = performance?.ffmpeg.thirdPartyDecoders?.length
+    ? t('第三方解码回退：{decoders}', { decoders: performance.ffmpeg.thirdPartyDecoders.join(' / ') })
+    : '';
   const title = mode === 'original'
     ? t('高清：显示原始素材，画质最好，可能更吃性能')
     : mode === 'proxy'
       ? t('流畅：使用轻量副本，播放更流畅')
       : `${t('自动：按本机 CPU、内存、GPU 和编解码能力选择流畅代理')}${performance
-        ? ` · ${tier} · ${performance.proxy.maxHeight}p/${performance.proxy.maxFps}fps · ${acceleration}`
+        ? ` · ${tier} · ${performance.proxy.maxHeight}p/${performance.proxy.maxFps}fps · ${acceleration}${decoderFallback ? ` · ${decoderFallback}` : ''}`
         : ''}`;
   return (
     <button
@@ -140,14 +147,38 @@ export const PreviewPanel = memo(function PreviewPanel({
 }: PreviewPanelProps) {
   const t = useT();
   const performance = useMediaPerformanceProfile();
-  const previewPremountFrames = adaptivePreviewPremountFrames(state.fps, performance?.tier);
+  const runtimeBudgets = mediaRuntimeBudgets(performance);
+  const proxyPlanning = useMemo(
+    () => previewProxyPlanning(state.fps, performance),
+    [performance, state.fps],
+  );
+  const hasItems = state.items.length > 0;
+  const [proxyFocusFrame, setProxyFocusFrame] = useState(0);
+  const proxyFocusBucketRef = useRef(-1);
+  const proxyFocusBucketFrames = Math.max(
+    state.fps,
+    Math.min(state.fps * 15, Math.round(proxyPlanning.afterFrames / 12)),
+  );
   const renderProject = useMemo<ProjectDoc>(() => ({
     ...project,
     timelines: project.timelines.map((timeline) => timeline.id === timelineId
       ? { ...timeline, ...state, id: timeline.id, name: timeline.name, order: timeline.order }
       : timeline),
   }), [project, state, timelineId]);
-  const preview = usePreviewProjectDoc(renderProject, timelineId);
+  const preview = usePreviewProjectDoc(renderProject, timelineId, {
+    focusFrame: proxyFocusFrame,
+    beforeFrames: proxyPlanning.beforeFrames,
+    afterFrames: proxyPlanning.afterFrames,
+    maxSources: proxyPlanning.maxSources,
+    prefetchSources: proxyPlanning.prefetchSources,
+    proxyConcurrency: proxyPlanning.proxyConcurrency,
+  });
+  const previewPremountFrames = adaptivePreviewPremountFrames(
+    state.fps,
+    performance?.tier,
+    preview.pressure,
+    proxyPlanning.decoderBudget,
+  );
   const duration = preview.plan.durationInFrames;
   const playerInputProps = useMemo(() => ({
     state: preview.state,
@@ -174,6 +205,29 @@ export const PreviewPanel = memo(function PreviewPanel({
   const [previewPanMode, setPreviewPanMode] = useState(false);
   const panStartRef = useRef<{ pointerId: number; x: number; y: number; pan: PreviewPan } | null>(null);
   const [autoEditCaption, setAutoEditCaption] = useState<{ trackId: TrackId; laneId: string } | null>(null);
+  useEffect(() => {
+    configureCubeCacheBudget({
+      maxEntries: runtimeBudgets.lutCacheMaxEntries,
+      maxBytes: runtimeBudgets.lutCacheMaxBytes,
+    });
+  }, [runtimeBudgets.lutCacheMaxBytes, runtimeBudgets.lutCacheMaxEntries]);
+  useEffect(() => {
+    proxyFocusBucketRef.current = -1;
+    setProxyFocusFrame(0);
+    const player = playerRef.current;
+    if (!player || !hasItems) return undefined;
+    const update = (frame: number) => {
+      const safeFrame = Math.max(0, Math.round(frame));
+      const bucket = Math.floor(safeFrame / proxyFocusBucketFrames);
+      if (bucket === proxyFocusBucketRef.current) return;
+      proxyFocusBucketRef.current = bucket;
+      setProxyFocusFrame(safeFrame);
+    };
+    update(player.getCurrentFrame());
+    const onFrame: CallbackListener<'frameupdate'> = (event) => update(event.detail.frame);
+    player.addEventListener('frameupdate', onFrame);
+    return () => player.removeEventListener('frameupdate', onFrame);
+  }, [hasItems, playerRef, proxyFocusBucketFrames, timelineId]);
   // Expose Player during full screen preview (` shortcut key/timeline toolbar button to make Player full screen)
   // Comes with a control bar; the editing state still uses the timeline transport, and does not display dual sets of controls.
   // Must listen to Remotion's own fullscreenchange: it walks the webkit legacy API in Chrome,
@@ -191,7 +245,6 @@ export const PreviewPanel = memo(function PreviewPanel({
       onSeedChat,
     }
     : null;
-  const hasItems = state.items.length > 0;
   const previewCanvasSize = useMemo(() => fitPreviewCanvasSize(stageSize, {
     width: state.width,
     height: state.height,
@@ -370,7 +423,7 @@ export const PreviewPanel = memo(function PreviewPanel({
         onDrop={(event) => { event.preventDefault(); void importFiles(event.dataTransfer.files); }}>
         {state.items.length === 0 ? (
           <>
-            <input ref={inputRef} type="file" accept="video/*,image/*,audio/*" multiple hidden onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
+            <input ref={inputRef} type="file" accept={`${VIDEO_FILE_PICKER_ACCEPT},image/*,audio/*`} multiple hidden onChange={(event) => { if (event.target.files) void importFiles(event.target.files); event.target.value = ''; }} />
             <button className="cc-preview-empty" disabled={busy} onClick={() => inputRef.current?.click()}>
               <Icon name="upload" size={24} />
               <span>{busy ? t('正在导入媒体…') : t('拖拽媒体到这里')}</span>

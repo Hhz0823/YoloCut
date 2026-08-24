@@ -1,4 +1,6 @@
 import { availableParallelism, totalmem } from 'node:os';
+import { resolveMediaCpuBudget } from './media-process.ts';
+import { mediaWorkAdmission, type MediaWorkAdmissionLike } from './media-work-admission.ts';
 
 const DEFAULT_DERIVATIVE_CONCURRENCY = 2;
 export const MAX_DERIVATIVE_CONCURRENCY = 4;
@@ -26,11 +28,16 @@ interface Job<T> {
 function configuredConcurrency(value = process.env.YOLOCUT_DERIVATIVE_CONCURRENCY): number {
   const parsed = Number.parseInt(value ?? '', 10);
   if (!Number.isFinite(parsed)) {
-    return availableParallelism() <= 4 || totalmem() < 12 * 1024 ** 3
-      ? 1
-      : DEFAULT_DERIVATIVE_CONCURRENCY;
+    return resolveDerivativeConcurrency(availableParallelism(), totalmem());
   }
   return Math.max(1, Math.min(MAX_DERIVATIVE_CONCURRENCY, parsed));
+}
+
+export function resolveDerivativeConcurrency(cores: number, totalMemoryBytes: number): number {
+  return Math.min(
+    MAX_DERIVATIVE_CONCURRENCY,
+    resolveMediaCpuBudget(cores, totalMemoryBytes).backgroundProcessConcurrency,
+  );
 }
 
 function cancellationError(): Error {
@@ -42,14 +49,20 @@ function cancellationError(): Error {
 export class DerivativeQueue {
   readonly concurrency: number;
   readonly cancelWhenUnobserved: boolean;
+  readonly admission: MediaWorkAdmissionLike;
   private readonly jobs = new Map<string, Job<unknown>>();
   private readonly pending: Job<unknown>[] = [];
   private active = 0;
 
-  constructor(concurrency = configuredConcurrency(), cancelWhenUnobserved = true) {
+  constructor(
+    concurrency = configuredConcurrency(),
+    cancelWhenUnobserved = true,
+    admission: MediaWorkAdmissionLike = mediaWorkAdmission,
+  ) {
     const normalized = Number.isFinite(concurrency) ? Math.floor(concurrency) : DEFAULT_DERIVATIVE_CONCURRENCY;
     this.concurrency = Math.max(1, Math.min(MAX_DERIVATIVE_CONCURRENCY, normalized));
     this.cancelWhenUnobserved = cancelWhenUnobserved;
+    this.admission = admission;
   }
 
   acquire<T>(key: string, work: DerivativeWork<T>): DerivativeLease<T> {
@@ -110,10 +123,15 @@ export class DerivativeQueue {
   private start(job: Job<unknown>): void {
     job.state = 'running';
     this.active += 1;
+    let releaseAdmission: (() => void) | undefined;
     void Promise.resolve()
-      .then(() => job.work(job.controller.signal))
+      .then(async () => {
+        releaseAdmission = await this.admission.acquire(job.controller.signal);
+        return job.work(job.controller.signal);
+      })
       .then(job.resolve, job.reject)
       .finally(() => {
+        releaseAdmission?.();
         job.state = 'done';
         if (this.jobs.get(job.key) === job) this.jobs.delete(job.key);
         this.active -= 1;

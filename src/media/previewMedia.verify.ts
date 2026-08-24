@@ -4,8 +4,10 @@ import {
   __previewProxyCacheStatsForVerify,
   __resetPreviewProxyStateForVerify,
   orderedPreviewSourcesForProject,
+  orderedPreviewSourcesForTimeline,
   PREVIEW_PROXY_CACHE_LIMIT,
   PREVIEW_PROXY_RETRY_MS,
+  previewDecodePressure,
   reportPreviewPlaybackFailure,
   requestPreviewProxy,
   resolveProjectPreviewSources,
@@ -28,6 +30,19 @@ await requestPreviewProxy(source);
 await requestPreviewProxy(source, true);
 await requestPreviewProxy(source, true);
 assert.equal(calls, 2, 'forced proxy generation is retried once and cached after it is ready');
+
+__resetPreviewProxyStateForVerify();
+const pressureSource = '/media/uploads/pressure.mp4';
+let pressureUrl = '';
+globalThis.fetch = async (input) => {
+  pressureUrl = String(input);
+  return Response.json({
+    source: { src: pressureSource, durationMs: 1_000, width: 640, height: 360, fps: 30, codec: 'h264', longGop: false },
+    proxy: { status: 'not-needed', reason: 'source-compatible' },
+  });
+};
+await requestPreviewProxy(pressureSource, false, 9);
+assert.match(pressureUrl, /[?&]pressure=16(?:&|$)/, 'decoder pressure is bucketed into a stable proxy cache profile');
 
 __resetPreviewProxyStateForVerify();
 const realNow = Date.now;
@@ -68,6 +83,33 @@ const timeline = {
   ],
 } as unknown as TimelineState;
 
+assert.equal(previewDecodePressure(timeline), 1);
+const denseTimeline = {
+  ...timeline,
+  tracks: { hidden: { hidden: true } },
+  items: [
+    ...Array.from({ length: 9 }, (_, index) => ({
+      id: `dense-${index}`, kind: 'video' as const, src: `/media/uploads/dense-${index}.mp4`,
+      track: `v${index}`, startFrame: 0, durationInFrames: 300,
+    })),
+    { id: 'hidden', kind: 'video' as const, src: '/media/uploads/hidden.mp4', track: 'hidden', startFrame: 0, durationInFrames: 300 },
+  ],
+} as unknown as TimelineState;
+assert.equal(previewDecodePressure(denseTimeline), 16, 'nine visible simultaneous videos use the 16-way pressure bucket');
+const extremeTimeline = {
+  ...timeline,
+  items: Array.from({ length: 100 }, (_, index) => ({
+    id: `extreme-${index}`, kind: 'video' as const, src: `/media/uploads/extreme-${index}.mp4`,
+    track: `v${index}`, startFrame: 0, durationInFrames: 300,
+  })),
+} as unknown as TimelineState;
+assert.equal(previewDecodePressure(extremeTimeline), 128, 'extreme overlap keeps a distinct 128-way low-bandwidth proxy profile');
+assert.deepEqual(
+  orderedPreviewSourcesForTimeline(timeline, { focusFrame: 100, beforeFrames: 15, afterFrames: 30 }),
+  ['/media/uploads/z.mp4'],
+  'proxy planning follows the playhead window instead of scanning the whole timeline',
+);
+
 assert.equal(resolveTimelinePreviewSources(timeline, (src) => src), timeline, 'unchanged preview keeps timeline identity');
 const resolvedTimeline = resolveTimelinePreviewSources(timeline, (src) => src.endsWith('/a.mp4') ? '/proxy/a.mp4' : src);
 assert.notEqual(resolvedTimeline, timeline);
@@ -96,6 +138,22 @@ assert.deepEqual(
   ['/media/uploads/a.mp4', '/media/uploads/z.mp4', '/media/uploads/nested.mp4'],
   'active timeline and earliest clips determine proxy priority, not alphabetic path order',
 );
+const longTimeline = {
+  ...activeTimeline,
+  items: Array.from({ length: 500 }, (_, index) => ({
+    id: `long-${index}`, kind: 'video' as const, src: `/media/uploads/long-${index}.mp4`,
+    track: 'v1', startFrame: index * 30, durationInFrames: 30,
+  })),
+};
+const longProject = { ...project, timelines: [longTimeline, nestedTimeline] } as unknown as ProjectDoc;
+const focusedSources = orderedPreviewSourcesForProject(longProject, 'active', ['active', 'nested'], {
+  focusFrame: 7_500,
+  beforeFrames: 60,
+  afterFrames: 90,
+  maxSources: 8,
+});
+assert.ok(focusedSources.length <= 8, 'a 500-clip timeline never floods the proxy request queue');
+assert.equal(focusedSources[0], '/media/uploads/long-250.mp4', 'the playhead source has first proxy priority');
 const untouchedProject = resolveProjectPreviewSources(project, new Set(['active']), (src) => src);
 assert.equal(untouchedProject, project, 'unchanged preview keeps project identity');
 const resolvedProject = resolveProjectPreviewSources(

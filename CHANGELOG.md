@@ -6,6 +6,52 @@ YoloCut 的重要变更记录在此。
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases use [Semantic Versioning](https://semver.org/).  
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+## [0.0.2] - 2026-08-24
+
+### Added / 新增
+
+- Added a portable codec compatibility layer that discovers the bundled `libaom`/`libvpx` decoders and optional operator-provided codec packs, while keeping matching FFmpeg and FFprobe binaries together.
+  新增可移植编解码兼容层，可发现内置的 `libaom`/`libvpx` 解码器与可选外置编解码包，并确保 FFmpeg 与 FFprobe 始终成对使用。
+- Added real-media regressions for AV1, VP9, M2TS, and software-only FFV1 across normalization, preview proxies, grading, scene detection, posters, filmstrips, Agent frame extraction, and timeline-reference slicing.
+  新增 AV1、VP9、M2TS 与仅能软件解码的 FFV1 真实素材回归，覆盖规范化、预览代理、自动调色、场景识别、海报、胶片条、Agent 抽帧与时间线引用切片。
+- Added a centralized media probe and architecture gates that reject runtime dependency cycles, layer violations, literal system FFmpeg/FFprobe launches, and feature modules that bypass the shared decode fallback policy.
+  新增统一媒体探测器与架构门禁，拒绝运行时循环依赖、分层越界、直接启动系统 FFmpeg/FFprobe，以及绕过共享解码回退策略的功能模块。
+
+### Changed / 变更
+
+- Dense multitrack playback now uses bounded decoder pools, adaptive proxy pressure, shared audio-element reuse, CPU/RAM-aware media admission, capped FFmpeg threads, and below-normal-priority media processes to keep low-end systems responsive.
+  高密度多轨播放现在使用有界解码池、自适应代理压力、音频元素复用、CPU/内存感知的媒体准入、受限 FFmpeg 线程和低优先级媒体进程，提升低配设备的响应性。
+- All media consumers now share one ordered decode policy: verified hardware acceleration, automatic software decode, then an explicit third-party decoder when available.
+  所有媒体功能现在统一遵循同一解码顺序：已验证的硬件加速、自动软件解码，以及可用时的显式第三方解码器。
+- Replaced the stale platform FFprobe 5.x packages with `@derhuerst/ffprobe-static@5.3.0`, matching the bundled FFmpeg 6.1.1 build on Windows, macOS, and Linux.
+  将旧的平台 FFprobe 5.x 包替换为 `@derhuerst/ffprobe-static@5.3.0`，使 Windows、macOS 与 Linux 的探针都与内置 FFmpeg 6.1.1 匹配。
+- Import pickers and Agent intake now accept a broader FFmpeg-backed container set, including MXF, M2TS/MTS/TS, MKV, AVI, WMV, FLV, VOB, DV, and RMVB.
+  导入选择器与 Agent 素材入口现支持更广的 FFmpeg 容器集合，包括 MXF、M2TS/MTS/TS、MKV、AVI、WMV、FLV、VOB、DV 与 RMVB。
+
+### Fixed / 修复
+
+- Removed the runtime import cycle between the settings container and local ASR pane by passing rendered settings fields down through a one-way component boundary.
+  移除设置容器与本地转写面板之间的运行时循环依赖，改为通过单向组件边界向下传递已渲染的设置字段。
+- Hardened YoloCut/OpenChatCut MCP compatibility checks so legacy registrations remain supported without weakening the complete 119-tool manifest, project targeting, or applied-session requirements.
+  加固 YoloCut/OpenChatCut MCP 兼容检查，在保留旧注册方式的同时，不放宽 119 项完整工具清单、工程定位和会话应用要求。
+- Hardware decoder failures no longer contaminate software normalization, and unsupported GPU codecs no longer break secondary features after a source has already imported.
+  硬件解码失败不再污染软件规范化路径；GPU 不支持素材编码时，也不会在素材导入后继续导致附属功能失效。
+- FFprobe commands no longer receive FFmpeg encoder `-threads` options, and Linux probes can fail over from a crashing static binary to the distribution probe for transport-stream media such as M2TS.
+  FFprobe 命令不再错误接收 FFmpeg 编码器的 `-threads` 参数；在 M2TS 等传输流素材上，Linux 也可从崩溃的静态探针自动切换到系统探针。
+- Fixed high-bit-depth and alpha detection for formats such as `p010le`, `gray10le`, and hardware pixel-format names, preventing unnecessary or missing compatibility proxies.
+  修复 `p010le`、`gray10le` 与硬件像素格式名称的高位深/透明度识别，避免错误生成或遗漏兼容代理。
+- Stabilized the Codex fast-login completion regression under a saturated test runner without masking a genuinely stuck pending login.
+  稳定高负载测试中的 Codex 快速登录完成竞态，同时仍会对真正卡住的待登录状态报错。
+- Split preview probing into stable stream metadata and optional keyframe sampling, so an older platform FFprobe that crashes during frame scans now falls back conservatively to a compatibility proxy instead of aborting media import.
+  将预览探测拆分为稳定的流元数据与可选关键帧采样；旧版平台 FFprobe 若在帧扫描时崩溃，现在会保守回退到兼容代理，而不会中断素材导入。
+
+### Validation / 验证
+
+- Full tests, production build budgets, desktop and detached-Agent smoke tests, the real 119-tool MCP edit flow, and an RTX 5070 NVDEC → CUDA → NVENC 4K proxy run passed before release.
+  发布前已通过全量测试、生产构建体积门禁、桌面与独立 Agent 冒烟、119 项工具的真实 MCP 编辑流程，以及 RTX 5070 的 NVDEC → CUDA → NVENC 4K 代理实测。
+
 ## [0.0.1] - 2026-08-24
 
 ### Added / 新增
@@ -725,6 +771,7 @@ The entries below are retained from the upstream project for license and change-
 - Added Electron desktop packaging for macOS, Windows, and Linux.  
   提供 macOS、Windows 与 Linux 的 Electron 桌面端打包能力。
 
+[0.0.2]: https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.2
 [0.0.1]: https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.1
 [0.2.1]: https://github.com/0xsline/OpenChatCut/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/0xsline/OpenChatCut/compare/v0.1.9...v0.2.0

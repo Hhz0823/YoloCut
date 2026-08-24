@@ -22,6 +22,10 @@ const CASES: Array<[ext: string, mime: string]> = [
   ['avif', 'image/avif'],
   ['gif', 'image/gif'],
   ['m4v', 'video/mp4'],
+  ['mxf', 'application/mxf'],
+  ['m2ts', 'video/mp2t'],
+  ['wmv', 'video/x-ms-wmv'],
+  ['flv', 'video/x-flv'],
   ['m4a', 'audio/mp4'],
   ['flac', 'audio/flac'],
   // The ones that are already recognized must remain unchanged.

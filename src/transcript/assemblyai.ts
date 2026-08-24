@@ -7,12 +7,12 @@
 // not get re-fetched + re-uploaded whole. Falls back to the original path.
 import type { TranscriptResult } from './types';
 import { getMediaBlob } from '../persist/mediaBlobStore';
+import { isVideoFileName } from '../../shared/media-file-extensions';
 
 const ASSEMBLYAI_POLL_DEADLINE_MS = 30 * 60 * 1000;
 const BASE = '/assemblyai/v2';
 
 /** Prefer extract for these (video always; large pure-audio too). */
-const VIDEO_EXT = /\.(mp4|mov|webm|mkv|m4v|avi|mpeg|mpg)$/i;
 const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i;
 /** Pure audio above this still gets re-encoded smaller for ASR. */
 const LARGE_AUDIO_BYTES = 40 * 1024 * 1024;
@@ -246,7 +246,7 @@ async function headBytes(path: string): Promise<number | null> {
 
 /** Decide whether to run server-side audio extract before ASR upload. */
 async function shouldExtractForAsr(path: string): Promise<boolean> {
-  if (VIDEO_EXT.test(path)) return true;
+  if (isVideoFileName(path)) return true;
   if (!AUDIO_EXT.test(path)) return true; // unknown extension: try extract (no-op-ish for pure audio)
   const bytes = await headBytes(path);
   return bytes != null && bytes > LARGE_AUDIO_BYTES;

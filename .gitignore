@@ -84,6 +84,10 @@ MODEL-OPT-PLAN.md
 !/scripts/smoke-yolocut-installer.ps1
 !/scripts/run-open-effects-webgl.mjs
 !/scripts/verify-open-effects-webgl.mjs
+!/scripts/verify-architecture.mjs
+!/scripts/verify-product-identity.mjs
+!/scripts/verify-nvidia-media.mjs
+!/scripts/verify-live-mcp.mjs
 
 # Local marketing assets and drafts
 /marketing/

@@ -1,3 +1,5 @@
+import { VIDEO_MIME_BY_EXTENSION } from '../../shared/media-file-extensions';
+
 export type ExternalUploadAssetType = 'audio' | 'gif' | 'image' | 'svg' | 'video';
 
 export interface ExternalUploadMediaType {
@@ -7,10 +9,12 @@ export interface ExternalUploadMediaType {
 }
 
 const MEDIA_TYPES: readonly ExternalUploadMediaType[] = [
-  { assetType: 'video', contentType: 'video/mp4', extension: '.mp4' },
+  ...Object.entries(VIDEO_MIME_BY_EXTENSION).map(([extension, contentType]) => ({
+    assetType: 'video' as const,
+    contentType,
+    extension,
+  })),
   { assetType: 'video', contentType: 'video/x-m4v', extension: '.m4v' },
-  { assetType: 'video', contentType: 'video/quicktime', extension: '.mov' },
-  { assetType: 'video', contentType: 'video/webm', extension: '.webm' },
   { assetType: 'image', contentType: 'image/jpeg', extension: '.jpg' },
   { assetType: 'image', contentType: 'image/png', extension: '.png' },
   { assetType: 'image', contentType: 'image/webp', extension: '.webp' },

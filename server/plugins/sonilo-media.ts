@@ -1,6 +1,5 @@
 import { proxyDispatcher } from '../outbound-proxy.ts';
 import { createWriteStream, openAsBlob } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -9,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 
 import { isSafeUploadName, resolveUploadFile, uploadDir } from '../media-dir.ts';
+import { probeMediaDurationSeconds as probeDurationWithFfprobe } from '../media-probe.ts';
 // Proxy-aware fetch: attaches the configured outbound proxy (keystore
 // PROXY_URL or HTTPS_PROXY/HTTP_PROXY env) via undici dispatcher.
 type FetchInit = Parameters<typeof fetch>[1] & { dispatcher?: unknown };
@@ -109,17 +109,7 @@ function localVideoUpload(uploadPath: string): { file: string; name: string } {
 }
 
 export function probeMediaDurationSeconds(file: string): Promise<number> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file]);
-    let output = '';
-    child.stdout.on('data', (data) => { output += String(data); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      const duration = Number(output.trim());
-      if (code === 0 && Number.isFinite(duration) && duration > 0) resolvePromise(duration);
-      else reject(new Error('unable to probe Sonilo source video'));
-    });
-  });
+  return probeDurationWithFfprobe(file, { errorLabel: 'Sonilo source video' });
 }
 
 /** Fail fast locally before uploading a cut the provider would reject. */

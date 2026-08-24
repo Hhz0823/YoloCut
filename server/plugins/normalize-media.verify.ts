@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
 import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
+import { MediaWorkAdmission } from '../media-work-admission.ts';
 import { DEFAULT_UPLOAD_MAX_BYTES } from '../r2.ts';
 import { seedKeystore } from '../keystore.ts';
 import { maxUploadBytes } from './upload-routes.ts';
@@ -104,6 +105,8 @@ const restoreEnv = (name: string, value: string | undefined) => {
 const testDir = await mkdtemp(join(tmpdir(), 'yolocut-ingest-policy-'));
 let server: ViteDevServer | undefined;
 let releaseEncoderGate: (() => void) | undefined;
+let verificationStage = 'initialization';
+let pendingNormalizeRequests: Promise<Response>[] = [];
 try {
   process.env.MEDIA_DIR = testDir;
   seedKeystore({ MEDIA_DIR: testDir });
@@ -177,7 +180,12 @@ try {
     ),
   );
 
-  const routeAdmission = createNormalizeAdmission();
+  // Production intentionally drops both route and media-work concurrency on
+  // small machines. This test specifically verifies the two-active/eight-waiter
+  // queue contract, so keep both admission layers deterministic rather than
+  // inheriting the GitHub runner's adaptive hardware profile.
+  const routeAdmission = createNormalizeAdmission(2, 8);
+  const mediaWorkAdmission = new MediaWorkAdmission(2);
   const observedAdmissionKeys: string[] = [];
   const admission = {
     acquire(key: string) {
@@ -219,20 +227,34 @@ try {
   };
 
 
+  verificationStage = 'start verification server';
   server = await createServer({
     configFile: false,
     logLevel: 'silent',
+    appType: 'custom',
+    optimizeDeps: { noDiscovery: true },
     plugins: [
       uploadMultipartPlugin(),
-      normalizeMediaPlugin({ admission, encoderHook }),
+      normalizeMediaPlugin({ admission, mediaWorkAdmission, encoderHook }),
     ],
-    server: { host: '127.0.0.1', port: 0 },
+    server: { host: '127.0.0.1', port: 0, watch: null },
   });
   await server.listen();
   const address = server.httpServer?.address();
   if (!address || typeof address === 'string') throw new Error('ingest policy verification server has no TCP address');
   const origin = `http://127.0.0.1:${address.port}`;
 
+  verificationStage = 'reject malformed request body';
+  const malformedResponse = await fetch(`${origin}/api/normalize-media`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  });
+  const malformedText = await malformedResponse.text();
+  assert.equal(malformedResponse.status, 500, malformedText);
+  assert.match(malformedText, /JSON|property name/i);
+
+  verificationStage = 'normalize VFR fixture';
   const vfrResponse = await postNormalize(origin, 'unequal-pts.mp4', { targetFps: 24 });
   const vfrText = await vfrResponse.text();
   assert.equal(vfrResponse.status, 200, vfrText);
@@ -271,6 +293,7 @@ try {
   assert.ok(Math.abs(vfr.durationSeconds - outputVfrProbe.duration) < 0.1);
 
 
+  verificationStage = 'initialize multipart upload';
   const multipartResponse = await fetch(`${origin}/upload/multipart/init`, {
     method: 'POST',
     headers: {
@@ -293,6 +316,7 @@ try {
   });
   assert.equal(abortResponse.status, 200, await abortResponse.text());
 
+  verificationStage = 'accept compatible source';
   const acceptedResponse = await fetch(`${origin}/api/normalize-media`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -310,6 +334,7 @@ try {
   assert.equal(accepted.path, '/media/uploads/compatible-large-frame.mp4');
   assert.deepEqual([accepted.width, accepted.height], [2048, 1152]);
 
+  verificationStage = 'convert incompatible audio only';
   const audioOnlyResponse = await fetch(`${origin}/api/normalize-media`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -352,6 +377,7 @@ try {
   assert.equal(outputStreams.find((stream) => stream.codec_type === 'audio')?.codec_name, 'aac');
 
   await copyFile(sourcePath, join(testDir, 'explicitly-optimized.mp4'));
+  verificationStage = 'explicitly optimize source';
   const optimizedResponse = await fetch(`${origin}/api/normalize-media`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -381,6 +407,8 @@ try {
   const activeRequests = concurrentNames.slice(0, 2).map((name) => (
     postNormalize(origin, name, { optimize: true })
   ));
+  pendingNormalizeRequests = [...activeRequests];
+  verificationStage = 'enter two active encoders';
   await waitFor(
     () => activeEncodes === 2,
     'two normalize requests did not enter the production encoder wrapper',
@@ -388,11 +416,14 @@ try {
   const queuedRequests = concurrentNames.slice(2).map((name) => (
     postNormalize(origin, name, { optimize: true })
   ));
+  pendingNormalizeRequests.push(...queuedRequests);
+  verificationStage = 'fill normalize queue';
   await waitFor(
     () => admission.snapshot().queued === 8,
     'normalize requests did not fill the production queue',
   );
   assert.deepEqual(admission.snapshot(), { active: 2, queued: 8 });
+  verificationStage = 'reject queue overflow';
   const overflowResponse = await postNormalize(origin, 'overflow.mov', { optimize: true });
   const overflowText = await overflowResponse.text();
   assert.equal(overflowResponse.status, 429, overflowText);
@@ -402,7 +433,9 @@ try {
   gate.resolve();
   releaseEncoderGate = undefined;
   encoderGate = undefined;
+  verificationStage = 'drain admitted requests';
   const admittedResponses = await Promise.all([...activeRequests, ...queuedRequests]);
+  pendingNormalizeRequests = [];
   for (const response of admittedResponses) {
     const text = await response.text();
     assert.equal(response.status, 200, text);
@@ -430,6 +463,7 @@ try {
   observedTempPaths.length = 0;
   const recoveryOutputPath = join(testDir, 'recovery.mp4');
   failOutputPath = recoveryOutputPath;
+  verificationStage = 'clean injected encoder failure';
   const failedResponse = await postNormalize(origin, 'recovery.mov', { optimize: true });
   const failedText = await failedResponse.text();
   assert.equal(failedResponse.status, 500, failedText);
@@ -450,6 +484,7 @@ try {
     'failed normalization must leave no partial temp output',
   );
 
+  verificationStage = 'recover after encoder failure';
   const recoveredResponse = await postNormalize(origin, 'recovery.mov', { optimize: true });
   const recoveredText = await recoveredResponse.text();
   assert.equal(recoveredResponse.status, 200, recoveredText);
@@ -465,8 +500,12 @@ try {
     false,
     'successful recovery must also remove every transaction temp',
   );
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  throw new Error(`normalize-media verification failed during ${verificationStage}: ${message}`, { cause: error });
 } finally {
   releaseEncoderGate?.();
+  await Promise.allSettled(pendingNormalizeRequests);
   await server?.close();
   await rm(testDir, { recursive: true, force: true });
   restoreEnv('MEDIA_DIR', previousMediaDir);

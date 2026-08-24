@@ -27,6 +27,7 @@ import { useTranscriptViewer } from './useTranscriptViewer';
 import { toggleMediaView } from './mediaView';
 import { resolveMediaPoolShortcut } from './mediaPoolShortcutScope';
 import { useMediaPoolFileImport } from './useMediaPoolFileImport';
+import { VIDEO_FILE_PICKER_ACCEPT } from '../../shared/media-file-extensions';
 import type { UseDirectoryImportState } from './useDirectoryImport';
 interface MediaPoolPanelProps {
   semanticScopeId: string;
@@ -349,8 +350,8 @@ export function MediaPoolPanel({
         });
       }}
     >
-      <input ref={inputRef} type="file" accept="video/*,image/*,audio/*,.gif,.svg,image/gif,image/svg+xml" multiple hidden onChange={(event) => void pickFiles(event.target.files, currentFolderId)} />
-      <input ref={relinkInputRef} type="file" accept="video/*,image/*,audio/*,.gif,.svg,image/gif,image/svg+xml" hidden onChange={(event) => void pickRelinkFile(event.target.files)} />
+      <input ref={inputRef} type="file" accept={`${VIDEO_FILE_PICKER_ACCEPT},image/*,audio/*,.gif,.svg,image/gif,image/svg+xml`} multiple hidden onChange={(event) => void pickFiles(event.target.files, currentFolderId)} />
+      <input ref={relinkInputRef} type="file" accept={`${VIDEO_FILE_PICKER_ACCEPT},image/*,audio/*,.gif,.svg,image/gif,image/svg+xml`} hidden onChange={(event) => void pickRelinkFile(event.target.files)} />
       <MediaPoolToolbar
         scopeId={semanticScopeId}
         assets={assets}

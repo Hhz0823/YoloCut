@@ -61,6 +61,7 @@ import {
 import {
   isCompatibleMcpStatusTool,
   LEGACY_MCP_STATUS_TOOLS,
+  LEGACY_PRODUCT_SLUGS,
   MCP_PROTOCOL_SERVER_NAME,
   MCP_STATUS_TOOL,
   PRODUCT_NAME,
@@ -68,7 +69,7 @@ import {
 } from '../../shared/product-brand.ts';
 export { toMcpContent, toStructuredContent } from './mcp-result.ts';
 
-export const YOLOCUT_SKILL_BASELINE = '2026-08-23.2';
+export const YOLOCUT_SKILL_BASELINE = '2026-08-24.1';
 export const MCP_SESSION_IDLE_LIMIT_MS = 60 * 60 * 1000;
 export const MCP_SESSION_COUNT_LIMIT = 64;
 export const MCP_POST_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -290,7 +291,7 @@ function makeServer(baseUrl: string, session: McpSession): Server {
     {
       capabilities: { tools: { listChanged: true }, prompts: {} },
       instructions: [
-        `${PRODUCT_NAME} external skill baseline: ${YOLOCUT_SKILL_BASELINE}. New clients should register the MCP server as ${PRODUCT_SLUG}; the ${MCP_PROTOCOL_SERVER_NAME} name remains compatible.`,
+        `${PRODUCT_NAME} external skill baseline: ${YOLOCUT_SKILL_BASELINE}. New clients should register the MCP server as ${PRODUCT_SLUG}; legacy registrations named ${LEGACY_PRODUCT_SLUGS.join(' or ')} remain compatible with the ${MCP_PROTOCOL_SERVER_NAME} protocol server.`,
         'Call get_connection_manifest to verify catalog coverage; fullEditing="ready" requires a live project editor and zero missing canonical or editor-session tools.',
         'Bind this MCP transport with target_project before editing. A connected browser is preferred; an existing stored project can use the offline fallback when no browser owns it.',
         `The target response and ${MCP_STATUS_TOOL} (legacy aliases: ${LEGACY_MCP_STATUS_TOOLS.join(', ')}) report bindingMode. Offline bindings expose only server-direct data tools and require approvalMode="auto".`,

@@ -75,10 +75,55 @@ export function parseCube(text: string): CubeLut {
 // ── Load cache: url → Parsed LUT (failure will be null, no retry storm; no LUT, transparent transmission)──
 const cache = new Map<string, CubeLut | null>();
 const pending = new Map<string, Promise<CubeLut | null>>();
+let cacheBytes = 0;
+let maxCacheEntries = 12;
+let maxCacheBytes = 32 * 1024 ** 2;
+
+function lutBytes(lut: CubeLut | null): number {
+  return lut?.data.byteLength ?? 0;
+}
+
+function readCachedCube(url: string): CubeLut | null | undefined {
+  if (!cache.has(url)) return undefined;
+  const value = cache.get(url) ?? null;
+  cache.delete(url);
+  cache.set(url, value);
+  return value;
+}
+
+function pruneCubeCache(): void {
+  while (cache.size > maxCacheEntries || cacheBytes > maxCacheBytes) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    cacheBytes -= lutBytes(cache.get(oldest) ?? null);
+    cache.delete(oldest);
+  }
+}
+
+function rememberCube(url: string, lut: CubeLut | null): void {
+  const previous = cache.get(url);
+  if (previous !== undefined) cacheBytes -= lutBytes(previous);
+  cache.delete(url);
+  const bytes = lutBytes(lut);
+  if (bytes > maxCacheBytes) return;
+  cache.set(url, lut);
+  cacheBytes += bytes;
+  pruneCubeCache();
+}
+
+export function configureCubeCacheBudget(input: { maxEntries: number; maxBytes: number }): void {
+  maxCacheEntries = Math.max(1, Math.min(64, Math.floor(input.maxEntries) || 1));
+  maxCacheBytes = Math.max(1024 ** 2, Math.floor(input.maxBytes) || 1024 ** 2);
+  pruneCubeCache();
+}
+
+export function cubeCacheStats(): { entries: number; bytes: number; maxEntries: number; maxBytes: number } {
+  return { entries: cache.size, bytes: cacheBytes, maxEntries: maxCacheEntries, maxBytes: maxCacheBytes };
+}
 
 /** The parsed LUT in the cache (not loaded/failed to load → null). Synchronized, hot paths for rendering.*/
 export function getCubeSync(url: string): CubeLut | null {
-  return cache.get(url) ?? null;
+  return readCachedCube(url) ?? null;
 }
 
 /** Whether the url has a conclusion (success or failure). ClipFx uses this as a first frame gate.*/
@@ -88,7 +133,7 @@ export function cubeSettled(url: string): boolean {
 
 /** Pull and parse.cube (idempotent, concurrent merge); return null on failure and cache the failure status.*/
 export function ensureCube(url: string): Promise<CubeLut | null> {
-  if (cache.has(url)) return Promise.resolve(cache.get(url) ?? null);
+  if (cache.has(url)) return Promise.resolve(readCachedCube(url) ?? null);
   const inflight = pending.get(url);
   if (inflight) return inflight;
   const p = (async () => {
@@ -96,11 +141,11 @@ export function ensureCube(url: string): Promise<CubeLut | null> {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const lut = parseCube(await res.text());
-      cache.set(url, lut);
+      rememberCube(url, lut);
       return lut;
     } catch (err) {
       console.error(`[cube-lut] ${url}:`, err);
-      cache.set(url, null); // Failure = transparent transmission, no repeated requests
+      rememberCube(url, null); // Failure = transparent transmission, no repeated requests
       return null;
     } finally {
       pending.delete(url);
@@ -112,5 +157,12 @@ export function ensureCube(url: string): Promise<CubeLut | null> {
 
 /** Test/warm injection: Put a parsed LUT (or failed state) directly into the cache.*/
 export function primeCube(url: string, lut: CubeLut | null): void {
-  cache.set(url, lut);
+  rememberCube(url, lut);
+}
+
+export function clearCubeCacheForVerify(): void {
+  cache.clear();
+  cacheBytes = 0;
+  maxCacheEntries = 12;
+  maxCacheBytes = 32 * 1024 ** 2;
 }

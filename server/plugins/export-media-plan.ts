@@ -22,9 +22,14 @@ import {
 } from '../media-dir.ts';
 import { resolveProductAsset } from '../product-assets.ts';
 import { safePublicFetch } from '../safe-public-fetch.ts';
+import {
+  VIDEO_FILE_EXTENSION_SET,
+  VIDEO_EXTENSION_BY_MIME,
+} from '../../shared/media-file-extensions.ts';
 
 const MAX_MATERIALIZED_MEDIA_BYTES = 10 * 1024 * 1024 * 1024;
 const MIME_EXTENSIONS: Readonly<Record<string, string>> = {
+  ...VIDEO_EXTENSION_BY_MIME,
   'audio/aac': '.aac',
   'audio/flac': '.flac',
   'audio/m4a': '.m4a',
@@ -93,7 +98,8 @@ function extensionFor(source: string, contentType: string | null): string {
   if (mimeExtension) return mimeExtension;
   try {
     const extension = extname(new URL(source).pathname).toLowerCase();
-    if (/^\.(?:aac|avif|bin|cube|flac|gif|heic|jpe?g|m4a|m4v|mov|mp3|mp4|ogg|opus|png|svg|wav|webm|webp)$/.test(extension)) {
+    if (VIDEO_FILE_EXTENSION_SET.has(extension)
+      || /^\.(?:aac|avif|bin|cube|flac|gif|heic|jpe?g|m4a|mp3|ogg|opus|png|svg|wav|webp)$/.test(extension)) {
       return extension;
     }
   } catch {

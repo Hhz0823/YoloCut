@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/favicon.svg" width="96" alt="YoloCut" />
+  <img src="assets/favicon.svg" width="96" alt="YoloCut logo" />
 </p>
 
 <h1 align="center">YoloCut</h1>
 
 <p align="center">
-  <strong>A local-first desktop video editor for manual precision and Agent-driven production</strong>
+  <strong>Edit by hand. Delegate to agents. Keep the timeline under your control.</strong>
 </p>
 
 <p align="center">
-  Multitrack editing · Detachable Agent workspace · Batch auto-editing · 119 MCP tools · Local models · NVDEC / NVENC
+  Open-source desktop video editing · Detachable Agent workspace · External MCP access · Hardware-aware 4K workflows
 </p>
 
 <p align="center">
@@ -17,100 +17,99 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.1"><img alt="Release v0.0.1" src="https://img.shields.io/badge/release-v0.0.1-0A84FF?style=flat-square" /></a>
-  <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-3A3A3C?style=flat-square&logo=windows11" />
+  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.2"><img alt="Release v0.0.2" src="https://img.shields.io/badge/release-v0.0.2-0A84FF?style=flat-square" /></a>
+  <img alt="Desktop platforms" src="https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-3A3A3C?style=flat-square" />
   <img alt="Agent tools 119" src="https://img.shields.io/badge/Agent_tools-119-30D158?style=flat-square" />
-  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=nodedotjs&logoColor=white" />
   <a href="LICENSE"><img alt="AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-FF9F0A?style=flat-square" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Hhz0823/YoloCut/releases/download/v0.0.1/YoloCut-v0.0.1-x64.exe"><strong>Download for Windows</strong></a>
-  · <a href="#agent-connection-and-the-complete-editing-flow">Connect an Agent</a>
+  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.2"><strong>Download v0.0.2</strong></a>
+  · <a href="#connect-an-external-agent">Connect an Agent</a>
   · <a href="#run-from-source">Run from source</a>
   · <a href="https://github.com/Hhz0823/YoloCut/issues">Report an issue</a>
 </p>
 
 <p align="center">
-  <img src="assets/readme-pic/01-editor-overview.png" alt="YoloCut editor with media, preview, inspector, Agent workspace, and multitrack timeline" />
+  <img src="assets/readme-pic/02-yolocut-editor.jpg" alt="YoloCut v0.0.2 desktop editor with multitrack timeline and Agent workspace" />
 </p>
 
-## What is YoloCut?
+## A new kind of video editor
 
-YoloCut puts a familiar desktop editing workspace and Agent automation inside the same real project. Edit tracks manually, trim and split clips, grade color, create captions, and mix audio—or let the built-in Agent, Codex, Claude Code, Gemini CLI, Cursor, or another MCP client inspect the project and call the same editing tools.
+YoloCut is a local-first desktop editor where a human and an Agent work on the **same real project**. Trim and arrange clips on the timeline, or ask the built-in Agent, Codex, Claude Code, Gemini CLI, Cursor, or another MCP client to use the same editing commands.
 
-It is not a one-shot prompt that returns an immutable video. Agent operations become actual tracks, clips, keyframes, captions, transitions, effects, and media. You can preview them, review them, undo them, continue editing by hand, and export a deliverable video or project package.
+This is not a one-shot video generator that returns an opaque result. Agent work becomes normal media, tracks, clips, captions, transitions, effects, keyframes, and export jobs. You can preview it, review the proposed changes, apply or reject them, undo them, and continue editing by hand.
 
 ```text
-Media + scripts → Agent builds a reviewable proposal → Real timeline edits
-                → Preview / adjust / undo → Captions + mix → Accelerated export
+Media + script + editing goal
+        ↓
+Agent creates a reviewable edit session
+        ↓
+Real timeline changes → preview → refine → export
 ```
 
-## Product workspace
+## Why YoloCut
+
+| One editing core | Agent-native workspace | Built for real desktop hardware |
+|---|---|---|
+| Manual UI and Agent tools converge on the same `EditorCore` command layer. | Dock the Agent left or right, detach it into a wide window, or connect an external MCP client. | Proxy editing, decoder fallbacks, workload admission, and GPU-aware export keep long high-resolution projects usable. |
+
+## Product tour
 
 <table>
   <tr>
     <td width="50%">
-      <img src="assets/readme-pic/02-project-dashboard.png" alt="YoloCut local project dashboard" />
-      <br /><sub><b>Local project dashboard</b> — Create, search, import, duplicate, archive, and manage projects.</sub>
+      <img src="assets/readme-pic/01-yolocut-dashboard.jpg" alt="YoloCut v0.0.2 project dashboard" />
+      <br /><sub><b>Local project dashboard</b> — create, search, import, copy, export, and manage projects.</sub>
     </td>
     <td width="50%">
-      <img src="assets/readme-pic/03-agent-transitions.png" alt="YoloCut Agent workspace and transition editing" />
-      <br /><sub><b>Agent and timeline collaboration</b> — Generate a proposal in chat, then refine it on real tracks.</sub>
+      <img src="assets/readme-pic/03-yolocut-agent.jpg" alt="YoloCut Agent skill library and detachable Agent workspace" />
+      <br /><sub><b>Agent workspace</b> — reusable workflows beside the same multitrack project.</sub>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="assets/readme-pic/04-motion-graphics.png" alt="YoloCut motion graphics" />
-      <br /><sub><b>Motion graphics</b> — Built-in templates, custom code, and editable MG clips.</sub>
+      <img src="assets/readme-pic/04-yolocut-effects.jpg" alt="YoloCut effects library" />
+      <br /><sub><b>Effects library</b> — masks, keying, color tools, LUTs, shaders, transitions, and motion effects.</sub>
     </td>
     <td width="50%">
-      <img src="assets/readme-pic/05-effects.png" alt="YoloCut WebGL effects" />
-      <br /><sub><b>Visual effects</b> — WebGL / GLSL effects, masks, grading, LUTs, and transitions.</sub>
+      <img src="assets/readme-pic/05-yolocut-mcp.jpg" alt="YoloCut external Agent MCP connection center" />
+      <br /><sub><b>External Agent connection</b> — live endpoint, Bearer token, health checks, and the required edit-session flow.</sub>
     </td>
   </tr>
 </table>
 
-The interface uses a restrained dark liquid-glass visual language. The Agent workspace docks on either side, detaches into a wide native window by drag or button, and docks back into the main editor.
+All screenshots above were captured from the current YoloCut `v0.0.2` desktop application.
 
-## Core capabilities
+## What is available in v0.0.2
 
-| Area | Current YoloCut capabilities |
+| Area | Current capabilities |
 |---|---|
-| Timeline | Multitrack editing, move, trim, split, ripple, snapping, keyframes, markers, undo, and redo |
-| Canvas and preview | 25%–400% zoom, hand pan, custom dimensions, safe areas, and social composition guides |
-| Visuals | Liquid glass, VHS, old film, thermal, night vision, comic, prism, ripple, CRT, chroma key, local mosaic, LUTs, and custom shaders |
-| Audio | Multiple tracks, sound effects, music, narration, loudness, ducking, voice isolation, and audio export |
-| Transcript and captions | Transcription jobs, word-level editing, silence compression, search, auto-captions, translation, styles, and SRT export |
-| Motion graphics | Built-in templates, a constrained runtime sandbox, custom templates, and video materialization |
-| Agent | Built-in chat Agent, skills, proposals, approval, progress, history, and external MCP |
-| Batch auto-editing | Media folders, edit scripts, narration scripts, reference videos, queueing, isolated projects, QA, and result writeback |
-| AI services | Third-party LLMs, ZCode Antigravity, local reference analysis, local/cloud voice, image, video, music, and sound services |
-| Delivery | MP4, audio, captions, FCPXML, project packages, export history, hardware-aware H.264, and resource-aware queueing |
+| Timeline | Multitrack video and audio, move, trim, split, ripple trim, slip, rate stretch, snapping, markers, keyframes, undo, and redo |
+| Preview and canvas | 25%–400% zoom, pan mode, custom output sizes, safe areas, composition guides, and clip transforms |
+| Text and captions | Transcription jobs, transcript editing, silence cleanup, captions, translation, styling, and SRT export |
+| Audio | Voice-over recording, multitrack mixing, sound effects, music analysis, loudness tools, ducking, and voice isolation |
+| Visual system | Masks, chroma key, grading, scopes, LUTs, WebGL/GLSL effects, transitions, and motion-graphics templates |
+| Agent | Built-in chat Agent, reusable Skills, proposals, approval policy, progress, history, and the canonical 119-tool catalog |
+| Batch editing | Media folders, edit scripts, narration scripts, reference videos, durable queues, per-job projects, QA, and status readback |
+| Local and cloud AI | Local ASR/TTS/model packs plus configurable third-party LLM, image, video, music, and sound providers |
+| Delivery | MP4, audio, SRT, FCPXML, portable project packages, export history, and hardware-aware H.264 routing |
 
-## Agent workspace
+## Agent-native by design
 
-The Agent workspace is not a chat-only sidebar. It is a control surface for YoloCut:
+The detachable Agent workspace is a control surface, not a decorative chat sidebar:
 
-- Manual editing and Agent editing share the same `EditorCore` commands and project state.
-- The workspace detaches into a wide native window and docks back to either side.
-- Edits enter reviewable sessions before they are applied, rejected, undone, or revised.
-- The built-in Agent and external MCP clients share the current **119-tool canonical catalog**.
-- Without an open project, `server-direct` exposes only a limited data layer and never pretends to offer the full editor.
+- It shares project state and editing commands with the manual UI.
+- It can dock left or right, open as a separate wide desktop window, and return to the editor through corner docking.
+- Mutating work is staged in an edit session for review before it is considered applied.
+- The built-in Agent and external MCP clients use the same canonical **119-tool** catalog.
+- When no project is open, YoloCut exposes only the smaller server-direct surface and reports the limitation honestly.
 
-```mermaid
-flowchart LR
-  UI[Manual editor] --> CORE[EditorCore]
-  BUILTIN[Built-in Agent] --> TOOLS[119 tools]
-  EXTERNAL[Codex / Claude / Gemini / Cursor] --> MCP[MCP + Bearer token]
-  MCP --> TOOLS
-  TOOLS --> CORE
-  CORE --> TIMELINE[Real timeline and project]
-  TIMELINE --> PREVIEW[Preview and review]
-  TIMELINE --> EXPORT[Render and export]
-```
+<p align="center">
+  <img src="assets/readme-pic/yolocut-runtime.en.svg" alt="YoloCut editor, Agent, MCP, media, and export architecture" />
+</p>
 
-## Agent connection and the complete editing flow
+## Connect an external Agent
 
 Install the YoloCut Agent Skill:
 
@@ -118,81 +117,67 @@ Install the YoloCut Agent Skill:
 npx skills add Hhz0823/YoloCut --skill yolocut
 ```
 
-Start YoloCut, open the target project, then copy the active URL and Bearer token from **Agent Connection Center (MCP)**. The default endpoint is:
+Start YoloCut, open the target project, then open **Agent Connection Center (MCP)** and copy its live URL and Bearer token. The default endpoint is:
 
 ```text
 http://localhost:5199/api/external-mcp/mcp
 ```
 
-The desktop app can select another loopback port when `5199` is busy. External clients should use the URL displayed by the connection center instead of permanently hard-coding the default.
+The desktop application can choose another loopback port when `5199` is occupied, so clients should use the address displayed by the connection center rather than permanently hard-coding the default.
 
-Complete session order:
+Required completion flow:
 
 ```text
-yolocut_status
-  → get_connection_manifest
-  → list_projects
-  → target_project
-  → load_skill / ToolSearch
-  → begin_edit_session
-  → read and edit tools carrying editSessionId
-  → review_edit_session
-  → get_edit_session (status=applied)
+yolocut_status → get_connection_manifest → list_projects → target_project
+→ load_skill / ToolSearch → begin_edit_session → editing tools
+→ review_edit_session → get_edit_session (status=applied)
 ```
 
-An Agent may report completion only when `readiness.fullEditing=ready`, `capabilityCoverage.complete=true`, and the final session is `applied`. Configuration examples for Codex, Claude Code, Gemini CLI, and Cursor are in the [YoloCut Agent connection guide](YOLOCUT_AGENT_CONNECTION.md).
-
-## ZCode Antigravity and third-party AI
-
-The Windows build can discover a local ZCode Antigravity installation:
-
-- It accepts only `127.0.0.1:18080..18180/v1`, preventing a local key from being sent to a remote relay.
-- It checks live `/v1/models` output and requires `gemini-3.7-flash`; stale state never masquerades as a successful connection.
-- YoloCut stores only the random local gateway API key. It never reads ZCode OAuth or upstream account credentials.
-- Manual local port, API key, and model recovery remains available when discovery fails.
-
-The built-in Agent can also use Anthropic, OpenAI, Gemini, Kimi, Qwen, GLM, DeepSeek, MiniMax, Mistral, and OpenAI-compatible endpoints. Available behavior depends on the provider, model, and credentials the user actually configures. Missing cloud configuration does not disable local timeline editing.
+An Agent should report completion only when full editing is ready, capability coverage is complete, and the final edit session is `applied`. Configuration examples for Codex, Claude Code, Gemini CLI, Cursor, and generic Streamable HTTP clients are in [YOLOCUT_AGENT_CONNECTION.md](YOLOCUT_AGENT_CONNECTION.md).
 
 ## Batch auto-editing
 
-YoloCut can give an Agent media, an edit script, a narration script, and a reference video as one batch intake. The queue contract accepts up to **10,000 jobs**. Each job owns an isolated project and lifecycle instead of putting thousands of videos on one timeline.
+Give YoloCut a media directory, edit script, narration script, and optional reference video. The durable queue accepts up to **10,000 jobs**, with a separate project and lifecycle for every output instead of placing thousands of videos on one timeline.
 
-1. Select a local media directory and grant scoped directory access.
-2. Supply an edit script, narration script, and optional finished-video reference.
-3. Local reference analysis extracts pacing, shot structure, caption, transition, and grading patterns.
-4. The Agent claims only the concurrency allowed by the current hardware plan and creates a reviewable proposal.
-5. Each job edits, validates, renders, and writes back a succeeded, failed, or cancelled result independently.
+1. Scan an authorized local media directory.
+2. Attach the edit script, narration script, and optional reference cut.
+3. Analyze rhythm, shot structure, captions, transitions, and color intent.
+4. Let the Agent create reviewable edits with hardware-aware concurrency.
+5. Render, quality-check, and read back success, failure, or cancellation per job.
 
-The optional open-source reference-analysis pack uses Apache-2.0 `SmolVLM2-500M-Video-Instruct-GGUF` with `llama.cpp`. Missing models or runtimes fail explicitly; YoloCut does not fabricate an analysis. A reference video is used only for structural patterns, not to copy its people, media, trademarks, or protected expression.
+Optional local reference analysis uses the Apache-2.0 `SmolVLM2-500M-Video-Instruct-GGUF` package with `llama.cpp`. Missing models or runtimes fail visibly; YoloCut does not fabricate an analysis result.
 
-## Long 4K media and adaptive hardware policy
+## Long 4K projects on modest machines
 
-YoloCut reads desktop hardware capabilities and applies conservative policies to Agent analysis, preview proxies, rendering, and local voice. Long 4K sources use lower-resolution proxies for analysis and preview while final export still reads the original media.
+YoloCut separates the interactive proxy path from final-quality media. Analysis and preview can use smaller derivatives while final export reads the original files.
 
-| Hardware tier | Auto-edit policy | Local narration recommendation |
+- NVIDIA systems prefer `NVDEC → scale_cuda → NVENC` after live capability probes.
+- H.264 routing probes NVENC, Intel QSV, AMD AMF, and then software `libx264`.
+- AV1, VP9, and unsupported hardware paths can fall back to FFmpeg software decoders such as `libaom-av1` and `libvpx`.
+- CPU, memory, VRAM, codec support, and active workload decide proxy size and queue concurrency.
+- Runtime results show the backend that was actually used and any fallback reason; model or GPU names alone are never treated as proof.
+
+| Hardware tier | Conservative editing policy | Local narration recommendation |
 |---|---|---|
-| Unrecognized GPU / low-end system | 540p proxy, one analysis worker, one renderer; use hardware when verified, otherwise software fallback | Kokoro CPU fallback |
-| RTX 2060 6 GB | 540p proxy, one analysis worker, one renderer, NVDEC / NVENC preferred | Kokoro 82M ONNX, WebGPU preferred with CPU fallback |
-| RTX 4060 8–9 GB | 720p proxy, two analysis workers, one renderer | Fish Audio S2 Pro `s2.cpp + Q6_K` (experimental) |
-| RTX 5060+ 8–9 GB | 1080p proxy, up to three analysis workers, one renderer | Fish Audio S2 Pro `s2.cpp + Q6_K` (experimental) |
-| RTX 40/50 series with ≥10 GB | Protect one renderer and the VRAM peak | Fish Audio S2 Pro `s2.cpp + Q8_0` (experimental) |
+| Unrecognized GPU / low-end PC | 540p proxy, one analysis job, one render job | Kokoro CPU fallback |
+| RTX 2060 6 GB | 540p proxy, NVDEC/NVENC when proven available | Kokoro 82M ONNX, WebGPU preferred with CPU fallback |
+| RTX 4060 8–9 GB | 720p proxy, up to two analysis jobs, protected single render | Fish Audio S2 Pro with `s2.cpp + Q6_K` (experimental) |
+| RTX 5060+ 8–9 GB | 1080p proxy, up to three analysis jobs, protected single render | Fish Audio S2 Pro with `s2.cpp + Q6_K` (experimental) |
+| RTX 40/50 series with at least 10 GB VRAM | Higher-quality local inference while preserving render headroom | Fish Audio S2 Pro with `s2.cpp + Q8_0` (experimental) |
 
-On NVIDIA systems that pass runtime probes, preview proxies support a zero-copy `NVDEC → scale_cuda → NVENC` path. Windows H.264 probes NVENC, QSV, and AMF before falling back to `libx264`. The UI and job results report the actual runtime backend and fallback reason; a GPU name alone is never treated as proof that CUDA is active.
+> Fish S2 model weights use the Fish Audio Research License. Commercial use requires separate written permission. Hardware tiers are conservative policy contracts, not performance guarantees for every driver and machine.
 
-> Fish S2 packs use the Fish Audio Research License and are currently intended for research and non-commercial use. Commercial use requires separate written permission. The `s2.cpp` integration and hardware tiers are experimental; real speed and stability depend on drivers, VRAM, and the installed runtime.
+## Download
 
-## Download and install
+| Platform | v0.0.2 package |
+|---|---|
+| Windows x64 | [YoloCut-v0.0.2-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.exe) |
+| macOS Apple Silicon | [YoloCut-v0.0.2-arm64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-arm64.dmg) |
+| macOS Intel | [YoloCut-v0.0.2-x64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.dmg) |
+| Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
+| Checksums | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-The current public desktop release is [YoloCut v0.0.1](https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.1) for Windows x64.
-
-- Installer: [YoloCut-v0.0.1-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.1/YoloCut-v0.0.1-x64.exe)
-- Size: 598,673,209 bytes (570.9 MiB)
-- SHA-256: `19AE22AB31D309C2D18DB706E7FD8BA06AD29F56530284DA987C5C475AC73841`
-- In-app updates: the Release also contains `latest-x64.yml` and the installer blockmap
-
-The installer passed silent install, application launch, rendering, MCP recovery, update-feed, uninstall, and cleanup checks. It is not Authenticode-signed, so Windows may show a SmartScreen warning. Verify the SHA-256 before running it.
-
-v0.0.1 does not provide macOS or Linux binaries. Run from source on those platforms.
+Windows packages are currently unsigned. macOS packages are ad-hoc signed but not notarized, and Linux AppImages are unsigned. Verify the SHA-256 values published with the release before running a package.
 
 ## Run from source
 
@@ -200,16 +185,10 @@ Requires Node.js `>=24 <25` and npm.
 
 ```bash
 git clone https://github.com/Hhz0823/YoloCut.git
-cd yolocut
+cd YoloCut
 npm install
 cp .env.example .env.local
 npm run dev
-```
-
-The browser development entry point defaults to:
-
-```text
-http://localhost:5199
 ```
 
 Desktop development and Windows packaging:
@@ -219,99 +198,61 @@ npm run desktop:dev
 npm run desktop:dist:win
 ```
 
-Only configure model or media services that you actually use in `.env.local`. Development launches isolate projects, media, jobs, credentials, and settings by Git checkout/worktree so concurrent branches do not contaminate one another.
+Development profiles isolate projects, media, credentials, tasks, and settings per Git checkout/worktree. Configure only the AI or media providers you actually intend to use.
 
-## Data, privacy, and security
+## Data and security
 
-- Projects, chats, versions, and media indexes stay local by default under `~/.yolocut`; existing legacy roots are mounted automatically on first YoloCut launch.
-- User media lives in a configurable local directory that can be backed up or migrated independently.
-- Whether an AI request leaves the machine depends on the model, generation provider, or media service you configure.
-- Provider credentials are stored by the server and are never exposed to the browser through `VITE_` variables.
-- MCP binds to loopback by default; the connection center issues a Bearer token and runs a real connection self-test.
-- Agents can modify a project only through `EditorCore`, keeping edits traceable, reviewable, and undoable.
-- Templates, plugins, shaders, LLM output, and user input are validated at their trust boundaries.
-- Local directory access uses opaque grants; absolute filesystem paths do not cross desktop IPC into Agent payloads.
+- Projects, chat, versions, indexes, and settings are local by default under `~/.yolocut`.
+- Existing legacy data roots can be mounted by the migration layer so users do not lose earlier projects.
+- Provider keys stay on the service side and are not exposed through `VITE_` browser variables.
+- MCP binds to loopback by default and requires a generated Bearer token.
+- Directory access uses opaque grants; absolute local paths do not cross the desktop IPC boundary into Agent tools.
+- AI traffic leaves the computer only for providers the user explicitly configures.
+- YoloCut targets a single-user desktop workflow, not an unisolated multi-tenant server deployment.
 
-YoloCut is designed for a single-user desktop workflow. Do not expose it as an unisolated multi-tenant service.
+## Architecture and verification
 
-## Architecture
-
-| Layer | Main technology |
+| Layer | Main responsibilities |
 |---|---|
-| Desktop and frontend | Electron 43, React 19, TypeScript 6, Vite 8 |
-| Editing core | Immutable timeline state, command layer, proposals, and atomic undo |
-| Agent | Vercel AI SDK 7, Agent Skills, MCP SDK, and the 119-tool catalog |
-| Preview and render | Remotion Player, Remotion Renderer, and FFmpeg |
-| Visual runtime | WebGL / GLSL, LUTs, and a constrained motion-graphics sandbox |
-| Local inference | ONNX Runtime, WebGPU, CUDA / DirectML / CoreML policy, llama.cpp, and s2.cpp |
-| Persistence | Local project library, SQLite, IndexedDB cache, and configurable media storage |
-| Delivery | MP4, audio, SRT, FCPXML, and project import/export |
-
-Core directories:
-
-| Directory | Responsibility |
-|---|---|
-| `src/editor/` | Timeline state and editing commands |
-| `src/agent/` | Agent assembly, tools, skills, approval, and progress |
-| `src/components/chat/` | Agent workspace, connection, and batch intake |
+| `src/editor/` | Immutable timeline state and editing commands |
+| `src/agent/` | Agent runtime, tools, Skills, proposals, approval, and progress |
 | `src/gl/` | WebGL effects, transitions, and shader runtime |
-| `src/transcript/` / `src/captions/` | Transcription, transcript editing, and captions |
-| `src/persist/` | Projects, versions, media, and batch-job persistence |
-| `server/plugins/` | Models, generation, transcription, export, and local runtimes |
-| `desktop/` | Electron process, windows, hardware detection, and native IPC |
+| `src/transcript/`, `src/captions/` | ASR, transcript editing, captions, and translation |
+| `src/persist/` | Projects, versions, media metadata, and batch jobs |
+| `server/` | Local HTTP, MCP, models, media processing, jobs, and exports |
+| `desktop/` | Electron windows, hardware probing, secure storage, and native IPC |
 | `remotion/` | Headless rendering and deliverable exports |
 
-## Development and verification
-
 ```bash
-# Full regression suite
-npm test
-
-# Type checking and production build
-npm run build
-
-# Static analysis
-npm run lint
-
-# Batch auto-edit contracts
-npm run verify:auto-edit
-
-# Desktop update and release configuration
-npm run verify:desktop-update
-
-# Detached Agent window round-trip smoke
+npm test                         # full regression suite
+npm run build                    # type checking and production build
+npm run lint                     # static analysis
+npm run verify:architecture      # enforced dependency boundaries
+npm run verify:mcp               # Agent/MCP contract checks
+npm run verify:media-performance # codecs, proxies, acceleration, fallbacks
+npm run verify:auto-edit         # batch auto-edit contracts
 npm run desktop:smoke:agent-window
 ```
 
-Changes to the timeline, Agent, preview, export, or model runtimes should include matching verification code instead of relying only on manual clicks.
+## Current release boundaries
 
-## Project status
+YoloCut `0.0.2` is an early public release. Core editing, Agent, MCP, batch, desktop packaging, and local model management are actively verified, but several surfaces remain experimental:
 
-YoloCut `0.0.1` is an early public release. Core editing, Agent, MCP, batch jobs, Windows packaging, and local model management are in a verifiable development stage, with these current boundaries:
+- Fish S2, SmolVLM2, and some GPU paths depend on local runtimes and drivers.
+- The project format and Agent catalog will continue to evolve; back up important projects before upgrades.
+- Signing and notarization are not yet production-grade.
+- A configured provider or installed model is required for its corresponding AI feature; manual editing remains available without one.
 
-- The Windows installer is not code-signed.
-- macOS and Linux currently require source execution or local packaging.
-- Fish S2, SmolVLM2, and some GPU paths are experimental and must be judged by actual runtime results.
-- RTX 2060/4060/5060 tiers are conservative policy contracts, not performance guarantees for every driver and machine.
-- The project format and Agent tool catalog will continue to evolve; back up important projects before upgrading.
+See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/Hhz0823/YoloCut/releases) for published artifacts.
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and [GitHub Releases](https://github.com/Hhz0823/YoloCut/releases) for published files.
+## License, provenance, and contributing
 
-## License and source attribution
+YoloCut is independently maintained by [hhz0823](https://github.com/Hhz0823) and licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
 
-YoloCut is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE).
+The codebase continues from the AGPL-licensed [0xsline/OpenChatCut](https://github.com/0xsline/OpenChatCut) project. This attribution preserves source and license provenance; upstream branding, contributors, community channels, and commercial relationships are not part of the YoloCut product or its public release history.
 
-YoloCut is independently maintained and continues from the AGPL-licensed [0xsline/OpenChatCut](https://github.com/0xsline/OpenChatCut) codebase. This statement preserves source and license attribution; it does not make upstream branding, community channels, or commercial relationships part of the YoloCut product.
+Third-party libraries, models, fonts, skills, and bundled binaries retain their own licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [`src/agent/skills/NOTICE.md`](src/agent/skills/NOTICE.md), and [`assets/fonts/LICENSES.md`](assets/fonts/LICENSES.md).
 
-The public product, application, client, protocol, and status names are `YoloCut`, `yolocut`, and `yolocut_status`. A small migration module still recognizes the former `ChatCut` / `OpenChatCut` data directories and MCP status aliases so existing projects and Agent registrations remain usable.
-
-Third-party dependencies, models, fonts, and bundled binaries retain their own licenses. See [`src/agent/skills/NOTICE.md`](src/agent/skills/NOTICE.md) for Agent Skills attribution and [`assets/fonts/LICENSES.md`](assets/fonts/LICENSES.md) for font licenses.
-
-## Contributing
-
-- Report issues: [GitHub Issues](https://github.com/Hhz0823/YoloCut/issues)
-- Browse releases: [GitHub Releases](https://github.com/Hhz0823/YoloCut/releases)
-- Read changes: [CHANGELOG.md](CHANGELOG.md)
-- Connect an Agent: [YOLOCUT_AGENT_CONNECTION.md](YOLOCUT_AGENT_CONNECTION.md)
-
-Before opening a pull request, run the checks relevant to your change and include the operating system, hardware, commands run, and known limitations.
+- Issues: [github.com/Hhz0823/YoloCut/issues](https://github.com/Hhz0823/YoloCut/issues)
+- Releases: [github.com/Hhz0823/YoloCut/releases](https://github.com/Hhz0823/YoloCut/releases)
+- Agent guide: [YOLOCUT_AGENT_CONNECTION.md](YOLOCUT_AGENT_CONNECTION.md)

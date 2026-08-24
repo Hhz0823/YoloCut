@@ -1,12 +1,14 @@
 import { proxyDispatcher } from '../outbound-proxy.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 
+import { ffmpegBin } from '../media-binaries.ts';
 import { uploadDir } from '../media-dir.ts';
+import { probeMediaDurationSeconds } from '../media-probe.ts';
+import { spawnMediaProcess } from '../media-process.ts';
 import {
   createGenerationJob,
   generationResultCheckpoint,
@@ -162,17 +164,7 @@ function validateSourceRevisions(value: unknown): string[] | undefined {
 const validate = validateSoundRequest;
 
 async function probeDuration(file: string): Promise<number> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file]);
-    let output = '';
-    child.stdout.on('data', (data) => { output += String(data); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      const duration = Number(output.trim());
-      if (code === 0 && Number.isFinite(duration) && duration > 0) resolvePromise(duration);
-      else reject(new Error('unable to probe generated sound'));
-    });
-  });
+  return probeMediaDurationSeconds(file, { errorLabel: 'generated sound' });
 }
 
 function rawInput(outputFormat: string): { format: string; rate: string } | undefined {
@@ -191,7 +183,9 @@ async function wrapRawAudio(bytes: Buffer, format: string): Promise<{ file: stri
   const output = join(dir, `${stem}.wav`);
   await writeFile(input, bytes);
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn('ffmpeg', ['-y', '-f', raw.format, '-ar', raw.rate, '-ac', '1', '-i', input, output]);
+    const child = spawnMediaProcess(ffmpegBin(), [
+      '-y', '-f', raw.format, '-ar', raw.rate, '-ac', '1', '-i', input, output,
+    ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let error = '';
     child.stderr.on('data', (data) => { error += String(data); });
     child.on('error', reject);

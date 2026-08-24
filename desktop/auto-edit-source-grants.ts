@@ -12,12 +12,12 @@ import type {
   AutoEditSourceSelection,
 } from '../shared/auto-edit-source.ts';
 import { LEGACY_PORTABLE_FORMATS } from '../shared/product-compat.ts';
+import { VIDEO_FILE_EXTENSION_SET } from '../shared/media-file-extensions.ts';
 import { canonicalCurrentUploadDirectory, importDirectoryCandidate, isPathInside } from './directory-watch-import.ts';
 
 const GRANT_FORMAT = 'yolocut-auto-edit-source-grants@1';
 const MAX_DEPTH = 24;
 const MAX_GRANTS = 20;
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v', '.avi', '.mpeg', '.mpg']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.heic', '.gif']);
 const AUDIO_EXTENSIONS = new Set(['.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.opus']);
 
@@ -41,7 +41,7 @@ interface StoredFile {
 
 function mediaKind(path: string): AutoEditSourceDescriptor['kind'] | null {
   const extension = extname(path).toLowerCase();
-  if (VIDEO_EXTENSIONS.has(extension)) return 'video';
+  if (VIDEO_FILE_EXTENSION_SET.has(extension)) return 'video';
   if (IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (AUDIO_EXTENSIONS.has(extension)) return 'audio';
   return null;

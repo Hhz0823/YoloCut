@@ -11,12 +11,14 @@ try {
   const media = join(root, 'media');
   await mkdir(join(media, 'nested'), { recursive: true });
   await writeFile(join(media, 'a.mp4'), 'video');
+  await writeFile(join(media, 'camera.mxf'), 'video');
   await writeFile(join(media, 'nested', 'b.wav'), 'audio');
   await writeFile(join(media, 'ignored.exe'), 'ignored');
   const grantsPath = join(root, 'grants.json');
   const store = new AutoEditSourceGrantStore(grantsPath);
   const selection = await store.grantDirectory(media);
-  assert.equal(selection.sources.length, 2);
+  assert.equal(selection.sources.length, 3);
+  assert.equal(selection.sources.find((source) => source.relativeName === 'camera.mxf')?.kind, 'video');
   assert.equal(selection.sources.some((source) => source.relativeName.includes('nested/')), true);
   assert.equal(JSON.stringify(selection).includes(media), false, 'absolute paths never cross IPC');
   assert.deepEqual(await store.selection(selection.grantId), selection);

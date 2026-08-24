@@ -10,8 +10,8 @@ import {
 export const PRODUCT = {
   name: 'YoloCut',
   slug: 'yolocut',
-  version: '0.0.1',
-  displayVersion: 'v0.0.1',
+  version: '0.0.2',
+  displayVersion: 'v0.0.2',
   appId: 'dev.yolocut.desktop',
   desktopName: 'yolocut.desktop',
   repository: {
@@ -36,7 +36,7 @@ export const LEGACY_PRODUCT_NAME = LEGACY_PRODUCT_NAMES[0];
 export const LEGACY_MCP_STATUS_TOOL = LEGACY_MCP_STATUS_TOOLS[0];
 export const LEGACY_MEDIA_DIR_ENV = MIGRATED_MEDIA_DIR_ENV;
 
-export { LEGACY_MCP_STATUS_TOOLS } from './product-compat.ts';
+export { LEGACY_MCP_STATUS_TOOLS, LEGACY_PRODUCT_SLUGS } from './product-compat.ts';
 
 export function isCompatibleMcpServerName(
   value: unknown,

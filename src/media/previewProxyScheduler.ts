@@ -19,14 +19,23 @@ interface PreviewProxyJob {
  * timeline has had a chance to request its first proxy.
  */
 export class PreviewProxyScheduler {
-  readonly #concurrency: number;
+  #concurrency: number;
   readonly #queued = new Map<string, PreviewProxyJob>();
   readonly #running = new Set<string>();
   #sequence = 0;
   #pumpScheduled = false;
 
   constructor(concurrency = 1) {
-    this.#concurrency = Math.max(1, Math.floor(concurrency));
+    this.#concurrency = Math.max(1, Math.min(4, Math.floor(concurrency)));
+  }
+
+  /** Adjust to the live hardware profile without discarding queued work. A
+   * lower limit does not interrupt requests that are already running. */
+  setConcurrency(concurrency: number): void {
+    const next = Math.max(1, Math.min(4, Math.floor(concurrency) || 1));
+    if (next === this.#concurrency) return;
+    this.#concurrency = next;
+    this.#schedulePump();
   }
 
   enqueue(key: string, priority: number, run: () => Promise<void>): boolean {

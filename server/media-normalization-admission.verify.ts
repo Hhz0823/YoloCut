@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import {
   createNormalizeAdmission,
   normalizationAbortError,
+  resolveNormalizeAdmissionLimits,
 } from './media-normalization-admission.ts';
+
+const GIB = 1024 ** 3;
+assert.deepEqual(resolveNormalizeAdmissionLimits(4, 8 * GIB), { concurrency: 1, maxQueued: 4 });
+assert.deepEqual(resolveNormalizeAdmissionLimits(8, 16 * GIB), { concurrency: 2, maxQueued: 8 });
+assert.deepEqual(resolveNormalizeAdmissionLimits(16, 32 * GIB), { concurrency: 2, maxQueued: 8 });
 
 const admission = createNormalizeAdmission(1, 2);
 const releaseActive = await admission.acquire('/media/one.mp4');

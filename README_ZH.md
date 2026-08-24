@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/favicon.svg" width="96" alt="YoloCut" />
+  <img src="assets/favicon.svg" width="96" alt="YoloCut 标志" />
 </p>
 
 <h1 align="center">YoloCut</h1>
 
 <p align="center">
-  <strong>可手动精剪，也可交给 Agent 的本地优先桌面视频编辑器</strong>
+  <strong>自己精剪，也可交给 Agent；最终控制权始终留在时间线上。</strong>
 </p>
 
 <p align="center">
-  时间线剪辑 · 可拆分 Agent 工作台 · 批量自动剪辑 · 119 项 MCP 工具 · 本地模型 · NVDEC / NVENC
+  开源桌面剪辑 · 可拆分 Agent 工作台 · 外部 MCP 接入 · 面向长 4K 素材的硬件自适应
 </p>
 
 <p align="center">
@@ -17,100 +17,99 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.1"><img alt="Release v0.0.1" src="https://img.shields.io/badge/release-v0.0.1-0A84FF?style=flat-square" /></a>
-  <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-3A3A3C?style=flat-square&logo=windows11" />
-  <img alt="Agent tools 119" src="https://img.shields.io/badge/Agent_tools-119-30D158?style=flat-square" />
-  <img alt="Node.js 24" src="https://img.shields.io/badge/Node.js-24-339933?style=flat-square&logo=nodedotjs&logoColor=white" />
+  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.2"><img alt="Release v0.0.2" src="https://img.shields.io/badge/release-v0.0.2-0A84FF?style=flat-square" /></a>
+  <img alt="桌面平台" src="https://img.shields.io/badge/desktop-Windows%20%7C%20macOS%20%7C%20Linux-3A3A3C?style=flat-square" />
+  <img alt="119 项 Agent 工具" src="https://img.shields.io/badge/Agent_tools-119-30D158?style=flat-square" />
   <a href="LICENSE"><img alt="AGPL-3.0-or-later" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-FF9F0A?style=flat-square" /></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Hhz0823/YoloCut/releases/download/v0.0.1/YoloCut-v0.0.1-x64.exe"><strong>下载 Windows 版</strong></a>
-  · <a href="#agent-连接与完整剪辑流程">连接 Agent</a>
+  <a href="https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.2"><strong>下载 v0.0.2</strong></a>
+  · <a href="#连接外部-agent">连接 Agent</a>
   · <a href="#从源码运行">从源码运行</a>
   · <a href="https://github.com/Hhz0823/YoloCut/issues">反馈问题</a>
 </p>
 
 <p align="center">
-  <img src="assets/readme-pic/01-editor-overview.png" alt="YoloCut 编辑器：素材、预览、属性、Agent 工作台与多轨时间线" />
+  <img src="assets/readme-pic/02-yolocut-editor.jpg" alt="YoloCut v0.0.2 桌面编辑器、多轨时间线与 Agent 工作台" />
 </p>
 
-## YoloCut 是什么
+## 一种新的剪辑方式
 
-YoloCut 把熟悉的桌面剪辑工作区与 Agent 自动化放进同一个真实工程。你可以在多轨时间线上手动裁剪、切分、调色、加字幕和混音，也可以让内置 Agent、Codex、Claude Code、Gemini CLI、Cursor 或其他 MCP 客户端读取工程并调用同一套编辑工具。
+YoloCut 是本地优先的桌面视频编辑器，让人和 Agent 在**同一个真实工程**里协作。你可以在多轨时间线上手动裁剪、重排和精修，也可以让内置 Agent、Codex、Claude Code、Gemini CLI、Cursor 或其他 MCP 客户端调用同一套剪辑命令。
 
-它不是“一句话生成一段不可修改的视频”。Agent 的操作最终都会落到轨道、片段、关键帧、字幕、转场、特效和素材上，能够预览、审阅、撤销、继续手动调整，并导出为可交付成片或工程文件。
+它不是“一句话生成一个不可修改结果”的黑盒。Agent 的工作会落到正常的素材、轨道、片段、字幕、转场、特效、关键帧和导出任务中。你可以预览方案、审阅修改、应用或拒绝、撤销，并继续手动编辑。
 
 ```text
-素材与脚本 → Agent 生成可审阅方案 → 写入真实时间线
-           → 预览 / 调整 / 撤销 → 字幕与混音 → 硬件加速导出
+素材 + 脚本 + 剪辑目标
+        ↓
+Agent 创建可审阅的编辑会话
+        ↓
+真实时间线修改 → 预览 → 精调 → 导出
 ```
 
-## 产品界面
+## YoloCut 的核心差异
+
+| 同一套编辑内核 | Agent 原生工作台 | 面向真实桌面硬件 |
+|---|---|---|
+| 手动界面与 Agent 工具最终汇入同一套 `EditorCore` 命令层。 | 工作台可停靠左右、拆成宽窗口，也可连接外部 MCP 客户端。 | 代理剪辑、解码回退、任务准入和 GPU 感知导出，让长视频与高分辨率工程更可用。 |
+
+## 全新产品界面
 
 <table>
   <tr>
     <td width="50%">
-      <img src="assets/readme-pic/02-project-dashboard.png" alt="YoloCut 本地工程管理" />
-      <br /><sub><b>本地工程首页</b> — 新建、搜索、导入、复制、归档和管理工程。</sub>
+      <img src="assets/readme-pic/01-yolocut-dashboard.jpg" alt="YoloCut v0.0.2 本地工程主页" />
+      <br /><sub><b>本地工程主页</b> — 新建、搜索、导入、复制、导出和管理工程。</sub>
     </td>
     <td width="50%">
-      <img src="assets/readme-pic/03-agent-transitions.png" alt="YoloCut Agent 工作台与转场编辑" />
-      <br /><sub><b>Agent 与时间线协作</b> — 对话生成方案，继续在真实轨道上精调。</sub>
+      <img src="assets/readme-pic/03-yolocut-agent.jpg" alt="YoloCut Agent 技能库与可拆分工作台" />
+      <br /><sub><b>Agent 工作台</b> — 可复用剪辑工作流与真实多轨工程并排协作。</sub>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <img src="assets/readme-pic/04-motion-graphics.png" alt="YoloCut Motion Graphics" />
-      <br /><sub><b>动态图形</b> — 内置模板、自定义代码与可继续编辑的 MG 片段。</sub>
+      <img src="assets/readme-pic/04-yolocut-effects.jpg" alt="YoloCut 特效库" />
+      <br /><sub><b>特效库</b> — 蒙版、抠像、调色、LUT、Shader、转场与动态图形。</sub>
     </td>
     <td width="50%">
-      <img src="assets/readme-pic/05-effects.png" alt="YoloCut WebGL 特效" />
-      <br /><sub><b>视觉特效</b> — WebGL / GLSL 特效、蒙版、调色、LUT 与转场。</sub>
+      <img src="assets/readme-pic/05-yolocut-mcp.jpg" alt="YoloCut 外部 Agent MCP 接入中心" />
+      <br /><sub><b>外部 Agent 接入</b> — 实时端点、Bearer Token、健康检查和完整编辑会话流程。</sub>
     </td>
   </tr>
 </table>
 
-界面采用暗色液态玻璃视觉语言。Agent 工作台可以停靠左侧或右侧，也可以通过拖拽或按钮拆成独立窗口，再拖回主编辑器。
+以上截图均直接拍摄自当前 YoloCut `v0.0.2` 桌面程序，不再沿用旧项目界面素材。
 
-## 核心能力
+## v0.0.2 当前能力
 
-| 领域 | YoloCut 当前能力 |
+| 领域 | 当前能力 |
 |---|---|
-| 时间线 | 多轨、移动、裁剪、切分、波纹编辑、吸附、关键帧、标记、撤销与重做 |
-| 画布与预览 | 25%–400% 缩放、抓手平移、自定义尺寸、安全区与社交平台构图参考线 |
-| 视觉 | 液态玻璃、VHS、老电影、热成像、夜视、漫画、棱镜、波纹、CRT、绿幕、局部马赛克、LUT 和自定义 shader |
-| 音频 | 多音轨、音效、背景音乐、旁白、响度、自动闪避、人声隔离和音频导出 |
-| 文字稿与字幕 | 转写任务、词级编辑、停顿压缩、查找、自动字幕、翻译、样式与 SRT 导出 |
-| Motion Graphics | 内置模板、受限运行沙箱、自定义模板和可视频化动态图形 |
-| Agent | 内置对话 Agent、技能系统、提案式编辑、审批、进度、历史和外部 MCP |
-| 批量自动剪辑 | 素材目录、剪辑脚本、口播脚本、参考成片、任务队列、逐条工程、质检与回写 |
-| AI 能力 | 第三方 LLM、ZCode Antigravity、本地参考分析、本地/云端语音、图片、视频、音乐和音效服务 |
-| 导出 | MP4、音频、字幕、FCPXML、工程包、导出历史、硬件感知 H.264 和资源感知排队 |
+| 时间线 | 多轨视频与音频、移动、裁剪、切分、波纹修剪、滑移、比率拉伸、吸附、标记、关键帧、撤销与重做 |
+| 预览与画布 | 25%–400% 缩放、抓手平移、自定义输出尺寸、安全区、构图参考线和片段变换 |
+| 文字稿与字幕 | 转写任务、文字稿编辑、停顿清理、自动字幕、翻译、样式与 SRT 导出 |
+| 音频 | 旁白录制、多轨混音、音效、音乐分析、响度、自动闪避与人声隔离 |
+| 视觉 | 蒙版、绿幕、调色、示波器、LUT、WebGL/GLSL 特效、转场与动态图形模板 |
+| Agent | 内置对话 Agent、技能、提案、审批策略、进度、历史和统一的 119 项工具目录 |
+| 批量剪辑 | 素材目录、剪辑脚本、口播脚本、参考成片、持久队列、逐条工程、质检和状态回读 |
+| 本地与云端 AI | 本地 ASR/TTS/模型包，以及可配置的第三方 LLM、图片、视频、音乐和音效服务 |
+| 交付 | MP4、音频、SRT、FCPXML、便携工程包、导出历史和硬件感知 H.264 路由 |
 
-## Agent 工作台
+## Agent 原生架构
 
-Agent 工作台不是一个只能聊天的侧栏，而是 YoloCut 的剪辑控制面：
+可拆分 Agent 工作台不是装饰性的聊天侧栏，而是 YoloCut 的剪辑控制面：
 
-- 与手动时间线共享同一套 `EditorCore` 命令和工程状态。
-- 支持拖出为独立宽窗口，并重新停靠到主界面左右两侧。
-- 编辑先进入可审阅会话，可应用、拒绝、撤销或继续修改。
-- 内置 Agent 与外部 MCP 客户端共享当前 **119 项核心工具**。
-- 工程未打开时只提供受限 `server-direct` 数据层，不伪装成完整剪辑能力。
+- 与手动界面共享工程状态和编辑命令。
+- 可停靠左侧或右侧、拆成独立宽窗口，并通过四角停靠回主编辑器。
+- 修改操作先进入编辑会话审阅，只有应用成功后才视为完成。
+- 内置 Agent 与外部 MCP 客户端共享统一的 **119 项工具目录**。
+- 未打开工程时只暴露较小的 `server-direct` 能力，并明确报告限制。
 
-```mermaid
-flowchart LR
-  UI[手动剪辑界面] --> CORE[EditorCore]
-  BUILTIN[内置 Agent] --> TOOLS[119 项工具]
-  EXTERNAL[Codex / Claude / Gemini / Cursor] --> MCP[MCP + Bearer Token]
-  MCP --> TOOLS
-  TOOLS --> CORE
-  CORE --> TIMELINE[真实时间线与工程]
-  TIMELINE --> PREVIEW[预览与审阅]
-  TIMELINE --> EXPORT[渲染与导出]
-```
+<p align="center">
+  <img src="assets/readme-pic/yolocut-runtime.svg" alt="YoloCut 编辑器、Agent、MCP、媒体与导出架构" />
+</p>
 
-## Agent 连接与完整剪辑流程
+## 连接外部 Agent
 
 安装 YoloCut Agent Skill：
 
@@ -118,81 +117,67 @@ flowchart LR
 npx skills add Hhz0823/YoloCut --skill yolocut
 ```
 
-启动 YoloCut、打开目标工程，再从 **Agent 连接中心 (MCP)** 复制实际 URL 和 Bearer Token。默认端点为：
+启动 YoloCut 并打开目标工程，再打开 **Agent 连接中心 (MCP)**，复制实时 URL 和 Bearer Token。默认端点为：
 
 ```text
 http://localhost:5199/api/external-mcp/mcp
 ```
 
-端口被占用时桌面端会自动换用其他回环端口，因此外部 Agent 应使用连接中心显示的实际地址，不要永久写死 `5199`。
+如果 `5199` 被占用，桌面程序会选择其他回环端口。因此外部 Agent 应使用连接中心显示的实际地址，不要永久写死默认端口。
 
-完整会话顺序：
+完整完成流程：
 
 ```text
-yolocut_status
-  → get_connection_manifest
-  → list_projects
-  → target_project
-  → load_skill / ToolSearch
-  → begin_edit_session
-  → 读取与剪辑工具（携带 editSessionId）
-  → review_edit_session
-  → get_edit_session（status=applied）
+yolocut_status → get_connection_manifest → list_projects → target_project
+→ load_skill / ToolSearch → begin_edit_session → 剪辑工具
+→ review_edit_session → get_edit_session（status=applied）
 ```
 
-只有 `readiness.fullEditing=ready`、`capabilityCoverage.complete=true` 且最终会话为 `applied`，Agent 才能报告剪辑完成。Codex、Claude Code、Gemini CLI 和 Cursor 的配置示例见 [YoloCut Agent 接入文档](YOLOCUT_AGENT_CONNECTION.md)。
-
-## ZCode Antigravity 与第三方 AI
-
-Windows 版可以自动发现本机 ZCode Antigravity：
-
-- 仅接受 `127.0.0.1:18080..18180/v1`，防止本地 Key 被发送到远程中继。
-- 实时请求 `/v1/models` 并要求存在 `gemini-3.7-flash`，不会用过期缓存伪装连接成功。
-- YoloCut 只保存本地网关所需的随机 API Key，不读取 ZCode 的 OAuth 或上游账号凭据。
-- 自动发现失败时保留手动填写本地端口、API Key 和模型的恢复入口。
-
-内置 Agent 还可以配置 Anthropic、OpenAI、Gemini、Kimi、Qwen、GLM、DeepSeek、MiniMax、Mistral 以及 OpenAI-compatible 接口。具体能力取决于用户实际配置的供应商、模型和密钥；未配置的云端功能不会影响本地时间线编辑。
+只有完整剪辑能力就绪、能力覆盖完整并且最终编辑会话状态为 `applied`，Agent 才能报告剪辑完成。Codex、Claude Code、Gemini CLI、Cursor 和通用 Streamable HTTP 客户端配置见 [YOLOCUT_AGENT_CONNECTION.md](YOLOCUT_AGENT_CONNECTION.md)。
 
 ## 批量自动剪辑
 
-YoloCut 的批量入口可以把素材、剪辑脚本、口播脚本和参考成片一起交给 Agent。队列契约最多接受 **10,000 条任务**，每条任务都拥有独立工程和状态，不把几千条视频挤进同一时间线。
+可以把素材目录、剪辑脚本、口播脚本和可选参考成片一起交给 YoloCut。持久队列最多接受 **10,000 条任务**，每个输出拥有独立工程和生命周期，不把几千条视频堆到同一条时间线。
 
-1. 选择本地素材目录并授予一次性目录访问。
-2. 指定剪辑脚本、口播脚本和可选参考成片。
-3. 本地参考分析提取节奏、镜头结构、字幕、转场和调色规律。
-4. Agent 按硬件允许的并发领取任务，生成可审阅方案。
-5. 每条任务独立剪辑、质检、渲染并回写成功、失败或取消状态。
+1. 扫描已经授权的本地素材目录。
+2. 附加剪辑脚本、口播脚本和可选参考成片。
+3. 分析节奏、镜头结构、字幕、转场和色彩意图。
+4. Agent 按硬件允许的并发创建可审阅剪辑。
+5. 每条任务独立渲染、质检，并回读成功、失败或取消状态。
 
-可选的开源参考分析包使用 Apache-2.0 的 `SmolVLM2-500M-Video-Instruct-GGUF` 与 `llama.cpp`。模型或运行时不可用时必须明确失败，不能伪造参考分析结果。参考成片只用于学习结构，不复制其人物、素材、商标或受版权保护的独特表达。
+可选的本地参考分析使用 Apache-2.0 的 `SmolVLM2-500M-Video-Instruct-GGUF` 模型包与 `llama.cpp`。模型或运行时缺失时会明确失败，不会伪造分析结果。
 
-## 长 4K 视频与硬件自适应
+## 低配电脑上的长 4K 工程
 
-YoloCut 会读取桌面硬件能力，为代理分析、预览代理、渲染和本地语音选择保守配置。长 4K 素材优先使用低分辨率代理进行分析和预览，最终导出仍读取原始媒体。
+YoloCut 把交互代理链路与最终质量链路分开：分析和预览可以使用更小的衍生代理，最终导出仍读取原始素材。
 
-| 硬件档位 | 自动剪辑策略 | 本地口播建议 |
+- NVIDIA 环境通过实际探测后优先使用 `NVDEC → scale_cuda → NVENC`。
+- H.264 路由依次探测 NVENC、Intel QSV、AMD AMF，最后回退软件 `libx264`。
+- AV1、VP9 或硬件不支持的路径可回退到 `libaom-av1`、`libvpx` 等 FFmpeg 软件解码器。
+- CPU、内存、显存、编码能力和当前负载共同决定代理尺寸与队列并发。
+- 运行结果展示实际使用的后端和回退原因，不会只根据显卡或模型名称假装 GPU 已启用。
+
+| 硬件档位 | 保守剪辑策略 | 本地口播建议 |
 |---|---|---|
-| 未识别 GPU / 低配设备 | 540p 代理，单路分析、单路渲染，硬件可用则使用，否则软件回退 | Kokoro CPU 回退 |
-| RTX 2060 6 GB | 540p 代理，单路分析、单路渲染，NVDEC / NVENC 优先 | Kokoro 82M ONNX，WebGPU 优先、CPU 回退 |
-| RTX 4060 8–9 GB | 720p 代理，2 路分析、1 路渲染 | Fish Audio S2 Pro `s2.cpp + Q6_K`（实验） |
-| RTX 5060+ 8–9 GB | 1080p 代理，最多 3 路分析、1 路渲染 | Fish Audio S2 Pro `s2.cpp + Q6_K`（实验） |
-| RTX 40/50 系且显存 ≥10 GB | 保护单路渲染与显存峰值 | Fish Audio S2 Pro `s2.cpp + Q8_0`（实验） |
+| 未识别 GPU / 低配电脑 | 540p 代理，单路分析、单路渲染 | Kokoro CPU 回退 |
+| RTX 2060 6 GB | 540p 代理，探测通过后启用 NVDEC/NVENC | Kokoro 82M ONNX，优先 WebGPU、可回退 CPU |
+| RTX 4060 8–9 GB | 720p 代理，最多两路分析，保护单路渲染 | Fish Audio S2 Pro `s2.cpp + Q6_K`（实验） |
+| RTX 5060+ 8–9 GB | 1080p 代理，最多三路分析，保护单路渲染 | Fish Audio S2 Pro `s2.cpp + Q6_K`（实验） |
+| RTX 40/50 系且显存至少 10 GB | 提高本地推理质量，同时为渲染保留显存 | Fish Audio S2 Pro `s2.cpp + Q8_0`（实验） |
 
-在探测通过的 NVIDIA 环境中，预览代理支持 `NVDEC → scale_cuda → NVENC` 零拷贝路径；Windows H.264 还会依次探测 NVENC、QSV、AMF，失败后回退 `libx264`。界面与任务结果以运行时实际后端和回退原因作为事实，不根据显卡名称假装 CUDA 已启用。
+> Fish S2 模型权重采用 Fish Audio Research License，商业使用需要另行获得书面许可。硬件分档是保守策略契约，不是对所有驱动和整机配置的性能承诺。
 
-> Fish S2 模型包使用 Fish Audio Research License，当前仅适合研究与非商业用途；商业使用需要另行获得书面许可。相关 `s2.cpp` 集成和硬件分档属于实验能力，实际速度与稳定性取决于驱动、显存和本机运行时。
+## 下载
 
-## 下载与安装
+| 平台 | v0.0.2 安装包 |
+|---|---|
+| Windows x64 | [YoloCut-v0.0.2-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.exe) |
+| macOS Apple Silicon | [YoloCut-v0.0.2-arm64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-arm64.dmg) |
+| macOS Intel | [YoloCut-v0.0.2-x64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.dmg) |
+| Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
+| 校验文件 | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-当前公开桌面版本为 [YoloCut v0.0.1](https://github.com/Hhz0823/YoloCut/releases/tag/v0.0.1)，支持 Windows x64。
-
-- 安装包：[YoloCut-v0.0.1-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.1/YoloCut-v0.0.1-x64.exe)
-- 大小：598,673,209 字节（570.9 MiB）
-- SHA-256：`19AE22AB31D309C2D18DB706E7FD8BA06AD29F56530284DA987C5C475AC73841`
-- 应用内更新：Release 同时包含 `latest-x64.yml` 和 `.blockmap`
-
-安装包已经过静默安装、应用启动、渲染、MCP 恢复、更新源和卸载清理测试，但当前尚未进行 Authenticode 代码签名。Windows 可能显示 SmartScreen 提示，请在运行前核对 SHA-256。
-
-v0.0.1 暂不提供 macOS 与 Linux 二进制安装包，这两个平台请从源码运行。
+Windows 安装包当前未签名；macOS 使用临时签名但尚未公证；Linux AppImage 也未签名。运行前请使用 Release 中提供的 SHA-256 校验安装包。
 
 ## 从源码运行
 
@@ -200,16 +185,10 @@ v0.0.1 暂不提供 macOS 与 Linux 二进制安装包，这两个平台请从�
 
 ```bash
 git clone https://github.com/Hhz0823/YoloCut.git
-cd yolocut
+cd YoloCut
 npm install
 cp .env.example .env.local
 npm run dev
-```
-
-浏览器开发入口默认为：
-
-```text
-http://localhost:5199
 ```
 
 桌面开发与 Windows 打包：
@@ -219,99 +198,61 @@ npm run desktop:dev
 npm run desktop:dist:win
 ```
 
-`.env.local` 只需配置实际使用的模型或素材服务。开发启动默认按 Git checkout/worktree 隔离工程、素材、任务、凭据和设置，避免多个开发分支互相污染。
+开发配置会按 Git checkout/worktree 隔离工程、素材、凭据、任务和设置。只需配置自己实际要使用的 AI 或素材服务。
 
-## 数据、隐私与安全
+## 数据与安全
 
-- 工程、聊天、版本和媒体索引默认保存在本机 `~/.yolocut`；首次启动 YoloCut 时会自动挂载已有旧版数据根目录。
-- 用户媒体保存在可配置的本地素材目录，可自行备份和迁移。
-- AI 请求是否离开本机，取决于你选择的模型、生成或素材服务。
-- 模型与供应商密钥由服务端保存，不通过 `VITE_` 暴露给浏览器。
-- MCP 默认绑定回环地址；连接中心生成 Bearer Token，并提供真实连接自检。
-- Agent 只能通过 `EditorCore` 命令修改工程，编辑保持可追踪、可审阅和可撤销。
-- 模板、插件、shader、LLM 输出和用户输入在信任边界处校验。
-- 本地目录授权使用不透明 grant，绝对路径不会跨越桌面 IPC 暴露给 Agent。
+- 工程、对话、版本、索引和设置默认保存在本机 `~/.yolocut`。
+- 迁移层可以挂载旧版数据根目录，避免用户丢失已有工程。
+- 服务商密钥保存在服务端，不通过 `VITE_` 浏览器变量暴露。
+- MCP 默认绑定回环地址，并要求使用程序生成的 Bearer Token。
+- 目录访问使用不透明授权，绝对本地路径不会跨越桌面 IPC 暴露给 Agent 工具。
+- 只有用户明确配置的供应商会产生外部 AI 网络请求。
+- YoloCut 面向单机单用户桌面工作流，不应直接作为未隔离的多租户服务部署。
 
-YoloCut 面向单机单用户桌面工作流，不应直接作为未经额外隔离的多租户服务部署。
+## 架构与验证
 
-## 技术架构
-
-| 层 | 主要技术 |
+| 层 | 主要职责 |
 |---|---|
-| 桌面与前端 | Electron 43、React 19、TypeScript 6、Vite 8 |
-| 编辑核心 | 不可变时间线状态、命令层、提案式应用与原子撤销 |
-| Agent | Vercel AI SDK 7、Agent Skills、MCP SDK、119 项工具目录 |
-| 预览与渲染 | Remotion Player、Remotion Renderer、FFmpeg |
-| 视觉 | WebGL / GLSL、LUT、动态图形沙箱 |
-| 本地推理 | ONNX Runtime、WebGPU、CUDA / DirectML / CoreML 策略、llama.cpp、s2.cpp |
-| 持久化 | 本地工程库、SQLite、IndexedDB 缓存、可配置媒体目录 |
-| 交付 | MP4、音频、SRT、FCPXML、工程导入导出 |
-
-核心目录：
-
-| 目录 | 职责 |
-|---|---|
-| `src/editor/` | 时间线状态与编辑命令 |
-| `src/agent/` | Agent、工具、技能、审批和进度 |
-| `src/components/chat/` | Agent 工作台、连接与批量入口 |
-| `src/gl/` | WebGL 特效、转场和 shader runtime |
-| `src/transcript/` / `src/captions/` | 转写、文字稿与字幕 |
-| `src/persist/` | 工程、版本、媒体和批量任务持久化 |
-| `server/plugins/` | 模型、生成、转写、导出和本地运行时 |
-| `desktop/` | Electron 主进程、窗口、硬件探测与本机 IPC |
+| `src/editor/` | 不可变时间线状态与编辑命令 |
+| `src/agent/` | Agent 运行时、工具、技能、提案、审批与进度 |
+| `src/gl/` | WebGL 特效、转场与 Shader 运行时 |
+| `src/transcript/`、`src/captions/` | ASR、文字稿编辑、字幕与翻译 |
+| `src/persist/` | 工程、版本、媒体元数据与批量任务 |
+| `server/` | 本地 HTTP、MCP、模型、媒体处理、任务与导出 |
+| `desktop/` | Electron 窗口、硬件探测、安全存储与本机 IPC |
 | `remotion/` | 无头渲染与交付导出 |
 
-## 开发与验证
-
 ```bash
-# 全量回归测试
-npm test
-
-# 类型检查与生产构建
-npm run build
-
-# 静态检查
-npm run lint
-
-# 批量自动剪辑契约
-npm run verify:auto-edit
-
-# 桌面更新与发布配置
-npm run verify:desktop-update
-
-# Agent 独立窗口拖出与停靠冒烟
+npm test                         # 全量回归测试
+npm run build                    # 类型检查与生产构建
+npm run lint                     # 静态检查
+npm run verify:architecture      # 依赖边界
+npm run verify:mcp               # Agent/MCP 契约
+npm run verify:media-performance # 编解码、代理、加速与回退
+npm run verify:auto-edit         # 批量自动剪辑契约
 npm run desktop:smoke:agent-window
 ```
 
-涉及时间线、Agent、预览、导出或模型运行时的改动，应同时提交对应验证脚本，不能只依赖手工点击。
+## 当前版本边界
 
-## 当前状态
+YoloCut `0.0.2` 是早期公开版本。核心剪辑、Agent、MCP、批量任务、桌面打包和本地模型管理正在持续验证，但以下能力仍属于实验阶段：
 
-YoloCut `0.0.1` 是早期公开版本，核心编辑、Agent、MCP、批量任务、Windows 打包和本地模型管理已进入可验证开发阶段，但仍有以下边界：
-
-- Windows 安装包尚未代码签名。
-- macOS 与 Linux 当前需要源码运行或自行打包。
-- Fish S2、SmolVLM2 和部分 GPU 路径属于实验能力，必须以实际运行结果为准。
-- RTX 2060/4060/5060 分档是经过契约测试的保守策略，不等于对所有驱动和整机配置的性能承诺。
-- 工程格式与 Agent 工具仍会迭代，升级前建议备份重要工程。
+- Fish S2、SmolVLM2 和部分 GPU 路径依赖本机运行时与驱动。
+- 工程格式和 Agent 工具目录会继续演进，升级前请备份重要工程。
+- 代码签名与公证尚未达到正式商业发布标准。
+- 对应 AI 功能需要用户配置供应商或安装模型；未配置时仍可正常使用手动剪辑。
 
 版本变化见 [CHANGELOG.md](CHANGELOG.md)，发布文件见 [GitHub Releases](https://github.com/Hhz0823/YoloCut/releases)。
 
-## 许可与来源说明
+## 许可、来源与参与开发
 
-YoloCut 采用 [GNU Affero General Public License v3.0 或更高版本](LICENSE)。
+YoloCut 由 [hhz0823](https://github.com/Hhz0823) 独立维护，采用 [GNU Affero General Public License v3.0 或更高版本](LICENSE)。
 
-YoloCut 是独立维护的开源项目，基于 AGPL 许可的 [0xsline/OpenChatCut](https://github.com/0xsline/OpenChatCut) 代码继续开发。该说明用于履行源码与许可证归属，不代表 YoloCut 继续使用上游产品品牌、社区入口或商业关系。
+代码基于 AGPL 许可的 [0xsline/OpenChatCut](https://github.com/0xsline/OpenChatCut) 项目继续开发。该说明用于保留源码和许可证来源；上游品牌、贡献者、社区入口与商业关系均不属于 YoloCut 产品及其公开发布历史。
 
-面向用户的产品名、应用名、客户端名、协议名和状态工具统一为 `YoloCut` / `yolocut` / `yolocut_status`。迁移模块仍能识别旧 `ChatCut` / `OpenChatCut` 数据目录与 MCP 状态别名，避免已有工程和 Agent 配置失效。
+第三方库、模型、字体、技能和内置二进制继续遵循各自许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)、[`src/agent/skills/NOTICE.md`](src/agent/skills/NOTICE.md) 和 [`assets/fonts/LICENSES.md`](assets/fonts/LICENSES.md)。
 
-第三方依赖、模型、字体与内置二进制遵循各自许可证。Agent Skills 来源见 [`src/agent/skills/NOTICE.md`](src/agent/skills/NOTICE.md)，字体许可见 [`assets/fonts/LICENSES.md`](assets/fonts/LICENSES.md)。
-
-## 参与开发
-
-- 提交问题：[GitHub Issues](https://github.com/Hhz0823/YoloCut/issues)
-- 查看版本：[GitHub Releases](https://github.com/Hhz0823/YoloCut/releases)
-- 阅读变更：[CHANGELOG.md](CHANGELOG.md)
+- 问题反馈：[github.com/Hhz0823/YoloCut/issues](https://github.com/Hhz0823/YoloCut/issues)
+- 发布版本：[github.com/Hhz0823/YoloCut/releases](https://github.com/Hhz0823/YoloCut/releases)
 - Agent 接入：[YOLOCUT_AGENT_CONNECTION.md](YOLOCUT_AGENT_CONNECTION.md)
-
-提交 PR 前请运行与改动范围匹配的验证，并说明操作系统、硬件、测试命令和已知限制。

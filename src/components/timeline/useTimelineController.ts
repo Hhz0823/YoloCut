@@ -36,7 +36,7 @@ import {
 import { isTimelineDragOverChat } from './timelineChatDrop';
 import {
   HEADER_W, MAX_ROW, MIN_ROW, RULER_H, TRACK_ROW, buildTimelineIndexes,
-  rulerMajorSeconds, rulerMinorCount, timelineFrameWindow, timelinePinnedItemIds,
+  rulerMajorSeconds, rulerMinorCount, timelineFrameWindow, timelinePinnedItemIds, timelineTrackWindow,
   type EditMode,
 } from './timelineUtil';
 import {
@@ -59,10 +59,18 @@ export function useTimelineController({
   const empty = total === 0;
   const liveStateRef = useRef(state);
   liveStateRef.current = state;
-  const trackIds = timelineTrackIds(state);
+  const { items: stateItems, trackOrder: stateTrackOrder, tracks: stateTracks, transitions: stateTransitions } = state;
+  const trackIds = useMemo(
+    () => timelineTrackIds({ items: stateItems, trackOrder: stateTrackOrder, tracks: stateTracks }),
+    [stateItems, stateTrackOrder, stateTracks],
+  );
   const indexes = useMemo(
-    () => buildTimelineIndexes(state),
-    [state],
+    () => buildTimelineIndexes({ items: stateItems, transitions: stateTransitions }),
+    [stateItems, stateTransitions],
+  );
+  const trackIndexById = useMemo(
+    () => new Map(trackIds.map((trackId, index) => [trackId, index])),
+    [trackIds],
   );
   const innerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -165,11 +173,12 @@ export function useTimelineController({
     const r = innerRef.current?.getBoundingClientRect();
     if (!r) return { itemIds: [], captionSelections: [] };
     const hitTracks = new Set<TrackId>();
-    let y = r.top + RULER_H;
-    for (const t of trackIds) {
-      const h = rowHeightOf(t);
-      if (bottom >= y && top <= y + h) hitTracks.add(t);
-      y += h;
+    const rowHeight = rowHeightOf(trackIds[0] ?? '');
+    const firstIndex = Math.max(0, Math.floor((top - r.top - RULER_H) / rowHeight));
+    const lastIndex = Math.min(trackIds.length - 1, Math.floor((bottom - r.top - RULER_H) / rowHeight));
+    for (let index = firstIndex; index <= lastIndex; index += 1) {
+      const trackId = trackIds[index];
+      if (trackId) hitTracks.add(trackId);
     }
     const itemIds = state.items
       .filter((it) => {
@@ -207,7 +216,12 @@ export function useTimelineController({
     for (const reference of references) emitSelectionRef(reference);
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('[data-cc-chat-composer]')?.focus());
   };
-  const [viewport, setViewport] = useState({ scrollLeft: 0, clientWidth: 0 });
+  const [viewport, setViewport] = useState({
+    scrollLeft: 0,
+    scrollTop: 0,
+    clientWidth: 0,
+    clientHeight: 0,
+  });
   // content is at least as wide as the panel, so track rows/ruler never stop
   // short of the right edge when the project is short or zoomed out.
   const innerW = Math.max(HEADER_W + total * px + 240, viewport.clientWidth);
@@ -217,9 +231,16 @@ export function useTimelineController({
     let raf = 0;
     const measure = () => {
       raf = 0;
-      const next = { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth };
+      const next = {
+        scrollLeft: el.scrollLeft,
+        scrollTop: el.scrollTop,
+        clientWidth: el.clientWidth,
+        clientHeight: el.clientHeight,
+      };
       setViewport((current) => current.scrollLeft === next.scrollLeft
-        && current.clientWidth === next.clientWidth ? current : next);
+        && current.scrollTop === next.scrollTop
+        && current.clientWidth === next.clientWidth
+        && current.clientHeight === next.clientHeight ? current : next);
     };
     const schedule = () => { if (!raf) raf = requestAnimationFrame(measure); };
     measure();
@@ -242,7 +263,17 @@ export function useTimelineController({
   const rowHeightOf = (_id: TrackId) => {
     return Math.max(MIN_ROW, Math.min(MAX_ROW * trackScale, TRACK_ROW * trackScale));
   };
-  const tracksHeight = trackIds.reduce((sum, id) => sum + rowHeightOf(id), 0);
+  const trackRowHeight = rowHeightOf(trackIds[0] ?? '');
+  const tracksHeight = trackIds.length * trackRowHeight;
+  const visibleTrackWindow = useMemo(
+    () => timelineTrackWindow(
+      viewport.scrollTop,
+      viewport.clientHeight,
+      trackRowHeight,
+      trackIds.length,
+    ),
+    [trackIds.length, trackRowHeight, viewport.clientHeight, viewport.scrollTop],
+  );
   const majorSec = rulerMajorSeconds(px, state.fps);
   const majorFrames = Math.max(1, Math.round(majorSec * state.fps));
   const minorDivs = rulerMinorCount(majorSec) + 1; // subdivisions between majors
@@ -258,12 +289,12 @@ export function useTimelineController({
   const trackFromClientY = (clientY: number): TrackId => {
     const r = innerRef.current?.getBoundingClientRect();
     if (!r) return defaultTrackId(state, 'video') ?? defaultTrackId(state, 'audio') ?? '';
-    let y = clientY - r.top - RULER_H;
-    for (const t of trackIds) {
-      y -= rowHeightOf(t);
-      if (y < 0) return t;
-    }
-    return trackIds[trackIds.length - 1] ?? '';
+    const rowHeight = rowHeightOf(trackIds[0] ?? '');
+    const index = Math.max(0, Math.min(
+      trackIds.length - 1,
+      Math.floor((clientY - r.top - RULER_H) / rowHeight),
+    ));
+    return trackIds[index] ?? '';
   };
 
   const copyCaptionSelections = (selections = selectedCaptions): boolean => {
@@ -445,7 +476,7 @@ export function useTimelineController({
   return {
     state, commands, playerRef, onRecordVoiceover, onReviewItem, onDropExternalFiles,
     selectedCaptions, onSelectCaption, onMarqueeCaptionSelect,
-    t, locale, total, empty, trackIds, indexes, innerRef, scrollRef,
+    t, locale, total, empty, trackIds, trackIndexById, indexes, innerRef, scrollRef,
     relinkInputRef, trackInsertInputRef, seekGestureRef,
     hoverPreviewFrame, captionSelectionMovePreview, setCaptionSelectionMovePreview,
     commitTimelineSelectionMove, zoom, setZoom, px, trackScale, metaOf,
@@ -457,7 +488,7 @@ export function useTimelineController({
     closeTrackDrillMenu, backFromTrackDrillMenu, recorder, toggleCaptions,
     pickMode, addSelectionToChat, ctxMenu, setCtxMenu, fxClip, setFxClip, clipJob, setClipJob,
     beginRelink, relinkFile, beginTrackInsert, insertTrackFiles, exportMg, convertToVideo,
-    innerW, visibleWindow, rowHeightOf, tracksHeight,
+    innerW, visibleWindow, visibleTrackWindow, rowHeightOf, trackRowHeight, tracksHeight,
     majorFrames, minorFrames, minorTicksPerMajor, rulerSpanFrames,
     frameFromClientX, trackFromClientY, copyCaptionSelections, pasteCaptionClipboard,
     pointer, drag, marquee, pickDrag, startPick, onPointerMove, onPointerUp, onPointerCancel,

@@ -12,12 +12,13 @@ import {
 assert.equal(hasExplicitUserDataDir(['YoloCut.exe']), false);
 assert.equal(hasExplicitUserDataDir(['YoloCut.exe', '--user-data-dir=C:\\isolated']), true);
 assert.equal(hasExplicitUserDataDir(['YoloCut.exe', '--user-data-dir', 'C:\\isolated']), true);
+const isolatedUserData = join(tmpdir(), 'yolocut-isolated');
 assert.deepEqual(
-  selectYoloCutUserData('C:\\app-data', 'C:\\isolated', [
+  selectYoloCutUserData(join(tmpdir(), 'app-data'), isolatedUserData, [
     'YoloCut.exe',
-    '--user-data-dir=C:\\isolated',
+    `--user-data-dir=${isolatedUserData}`,
   ]),
-  { directory: 'C:\\isolated', mountLegacy: false },
+  { directory: isolatedUserData, mountLegacy: false },
 );
 
 const root = await mkdtemp(join(tmpdir(), 'yolocut-compat-'));

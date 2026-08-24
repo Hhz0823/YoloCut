@@ -21,6 +21,11 @@ import {
 } from './media-normalization.ts';
 import { putUploadFile, r2Config } from './r2.ts';
 import { uploadDir } from './media-dir.ts';
+import {
+  mediaWorkAdmission,
+  type MediaWorkAdmissionLike,
+  type ReleaseMediaWorkPermit,
+} from './media-work-admission.ts';
 
 export interface NormalizeMediaFileResult {
   readonly path: string;
@@ -46,6 +51,7 @@ export interface NormalizeMediaFileOptions {
   readonly targetFps?: number;
   readonly signal?: AbortSignal;
   readonly admission?: NormalizeAdmission;
+  readonly mediaWorkAdmission?: MediaWorkAdmissionLike;
   readonly encoderHook?: (
     context: NormalizeEncodeContext,
     encode: () => Promise<void>,
@@ -259,6 +265,7 @@ export async function normalizeMediaFile(
   const outputPath = resolveNormalizeOutputPath(options.inputPath);
   const admission = options.admission ?? normalizeAdmission;
   let release: ReleaseNormalizePermit | undefined;
+  let releaseMediaWork: ReleaseMediaWorkPermit | undefined;
   let tempPath: string | undefined;
   try {
     release = await admission.acquire(await resolveNormalizeTargetKey(outputPath), options.signal);
@@ -267,7 +274,13 @@ export async function normalizeMediaFile(
     if (!plan.reason) return acceptedResult(options, plan.meta);
     tempPath = createNormalizeTempPath(outputPath);
     options.logInfo?.(`[normalize-media] ${basename(options.inputPath)}: ${plan.reason}`);
-    await encodePlannedMedia(options, plan, outputPath, tempPath);
+    releaseMediaWork = await (options.mediaWorkAdmission ?? mediaWorkAdmission).acquire(options.signal);
+    try {
+      await encodePlannedMedia(options, plan, outputPath, tempPath);
+    } finally {
+      releaseMediaWork();
+      releaseMediaWork = undefined;
+    }
     const finalPath = await publishNormalized(options.inputPath, outputPath, tempPath, options.signal);
     tempPath = undefined;
     await refreshNormalizedR2(finalPath, options);
@@ -276,6 +289,7 @@ export async function normalizeMediaFile(
     options.logInfo?.(`[normalize-media] ${basename(options.inputPath)} → ${basename(finalPath)} (${plan.meta.size} → ${result.bytes} bytes)`);
     return result;
   } finally {
+    releaseMediaWork?.();
     if (tempPath) await unlink(tempPath).catch(() => {});
     release?.();
   }

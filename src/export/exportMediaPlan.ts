@@ -3,6 +3,7 @@ import {
   ExportFailureError,
   type ExportMediaIssue,
 } from './exportFailure.js';
+import { isVideoFileName } from '../../shared/media-file-extensions.js';
 
 export type ExportMediaOwner = ExportMediaIssue['owner'];
 
@@ -46,6 +47,7 @@ function mediaField(key: string): boolean {
 
 function mediaLookingValue(value: string): boolean {
   return /^(?:blob:|data:|https?:|file:|\/|\.\.?(?:\/|\\)|[A-Za-z]:[\\/])/.test(value)
+    || isVideoFileName(value)
     || /\.(?:mp4|m4v|mov|webm|mp3|wav|m4a|aac|ogg|opus|flac|png|jpe?g|gif|webp|avif|heic|svg|cube)(?:[?#].*)?$/i.test(value);
 }
 

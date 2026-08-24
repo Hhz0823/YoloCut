@@ -75,14 +75,25 @@ export interface Timeline extends TimelineState {
 }
 
 /** Track ids in visual top-to-bottom order. Legacy four-lane states still work. */
-export function timelineTrackIds(s: TimelineState): TrackId[] {
+export function timelineTrackIds(
+  s: Pick<TimelineState, 'trackOrder' | 'tracks' | 'items'>,
+): TrackId[] {
   const ids = s.trackOrder ? [...s.trackOrder] : [...TRACK_ORDER];
-  for (const id of Object.keys(s.tracks ?? {})) if (!ids.includes(id)) ids.push(id);
-  for (const item of s.items) if (!ids.includes(item.track)) ids.push(item.track);
+  const seen = new Set(ids);
+  for (const id of Object.keys(s.tracks ?? {})) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  for (const item of s.items) {
+    if (seen.has(item.track)) continue;
+    seen.add(item.track);
+    ids.push(item.track);
+  }
   return ids;
 }
 
-export function trackKind(s: TimelineState, id: TrackId): TrackKind {
+export function trackKind(s: Pick<TimelineState, 'tracks'>, id: TrackId): TrackKind {
   const prefix = id.toUpperCase()[0];
   return s.tracks?.[id]?.kind ?? (prefix === 'A' ? 'audio' : prefix === 'C' ? 'caption' : 'video');
 }
@@ -148,9 +159,12 @@ export function captionsOnTrack(s: TimelineState, id: TrackId): CaptionsData | n
 }
 
 export function captionTrackEntries(s: TimelineState): Array<{ id: TrackId; captions: CaptionsData | null }> {
-  return timelineTrackIds(s)
-    .filter((id) => trackKind(s, id) === 'caption')
-    .map((id) => ({ id, captions: captionsOnTrack(s, id) }));
+  const captionIds = timelineTrackIds(s).filter((id) => trackKind(s, id) === 'caption');
+  const legacyTrackId = captionIds[0];
+  return captionIds.map((id) => {
+    const own = s.tracks?.[id]?.captions;
+    return { id, captions: own !== undefined ? own : id === legacyTrackId ? s.captions ?? null : null };
+  });
 }
 
 /** total timeline length = last item's end (min 1s). */

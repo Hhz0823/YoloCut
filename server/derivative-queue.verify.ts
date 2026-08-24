@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 
-import { DerivativeQueue } from './derivative-queue.ts';
+import { DerivativeQueue, resolveDerivativeConcurrency } from './derivative-queue.ts';
+
+const GIB = 1024 ** 3;
+
+assert.equal(resolveDerivativeConcurrency(4, 8 * GIB), 1);
+assert.equal(resolveDerivativeConcurrency(8, 16 * GIB), 2);
+assert.equal(resolveDerivativeConcurrency(16, 32 * GIB), 3);
 
 let observedAbort = false;
 const persistent = new DerivativeQueue(1, false);

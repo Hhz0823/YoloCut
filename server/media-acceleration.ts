@@ -1,6 +1,5 @@
-import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
-import { ffmpegThreadArgs } from './media-process.ts';
+import { ffmpegThreadArgs, spawnMediaProcess } from './media-process.ts';
 
 export type H264Encoder =
   | 'h264_videotoolbox'
@@ -83,7 +82,7 @@ async function availableHwAccels(ffmpeg: string): Promise<Set<string>> {
   const cached = hwAccelsCache.get(key);
   if (cached) return cached;
   const { promise, resolve } = promiseConstructor.withResolvers<Set<string>>();
-  const child = spawn(ffmpeg, ['-hide_banner', '-hwaccels'], {
+  const child = spawnMediaProcess(ffmpeg, ['-hide_banner', '-hwaccels'], {
     cwd: dirname(ffmpeg),
     stdio: ['ignore', 'pipe', 'ignore'],
   });
@@ -109,7 +108,7 @@ export function ffmpegFilterAvailable(ffmpeg: string, filter: string): Promise<b
   const cached = filterCache.get(key);
   if (cached) return cached;
   const { promise, resolve } = promiseConstructor.withResolvers<boolean>();
-  const child = spawn(ffmpeg, ['-hide_banner', '-h', `filter=${safeFilter}`], {
+  const child = spawnMediaProcess(ffmpeg, ['-hide_banner', '-h', `filter=${safeFilter}`], {
     cwd: dirname(ffmpeg),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -145,7 +144,7 @@ export async function probeEncoderQualityMode(
   const cached = qualityModeCache.get(key);
   if (cached) return cached;
   const { promise, resolve } = promiseConstructor.withResolvers<H264QualityMode | false>();
-  const child = spawn(ffmpeg, ['-hide_banner', '-h', `encoder=${encoder}`], {
+  const child = spawnMediaProcess(ffmpeg, ['-hide_banner', '-h', `encoder=${encoder}`], {
     cwd: dirname(ffmpeg),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -268,7 +267,7 @@ function probeEncoder(
   vaapiDevice: string,
 ): Promise<boolean> {
   const { promise, resolve } = promiseConstructor.withResolvers<boolean>();
-  const child = spawn(ffmpeg, h264ProbeArgs(encoder, vaapiDevice), {
+  const child = spawnMediaProcess(ffmpeg, h264ProbeArgs(encoder, vaapiDevice), {
     cwd: dirname(ffmpeg),
     stdio: ['pipe', 'ignore', 'ignore'],
   });
@@ -290,7 +289,7 @@ function probeCompiledEncoder(ffmpeg: string, encoder: H264Encoder): Promise<boo
   const cached = compiledEncoderCache.get(key);
   if (cached) return cached;
   const { promise, resolve } = promiseConstructor.withResolvers<boolean>();
-  const child = spawn(ffmpeg, ['-hide_banner', '-h', `encoder=${encoder}`], {
+  const child = spawnMediaProcess(ffmpeg, ['-hide_banner', '-h', `encoder=${encoder}`], {
     cwd: dirname(ffmpeg),
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -28,12 +28,13 @@ import {
 } from '../../captions/captionSelectionInteraction';
 import type { TimelineProps } from './timelineTypes';
 import { useTimelineController } from './useTimelineController';
+import { VIDEO_FILE_PICKER_ACCEPT } from '../../../shared/media-file-extensions';
 
 export function Timeline(props: TimelineProps) {
   const {
     state, commands, playerRef, onRecordVoiceover, onReviewItem, onDropExternalFiles,
     selectedCaptions, onSelectCaption, onMarqueeCaptionSelect,
-    t, locale, total, empty, trackIds, indexes, innerRef, scrollRef,
+    t, locale, total, empty, trackIds, trackIndexById, indexes, innerRef, scrollRef,
     relinkInputRef, trackInsertInputRef, seekGestureRef,
     hoverPreviewFrame, captionSelectionMovePreview, setCaptionSelectionMovePreview,
     commitTimelineSelectionMove, zoom, setZoom, px, metaOf,
@@ -45,7 +46,7 @@ export function Timeline(props: TimelineProps) {
     closeTrackDrillMenu, backFromTrackDrillMenu, recorder, toggleCaptions,
     pickMode, addSelectionToChat, ctxMenu, setCtxMenu, fxClip, setFxClip, clipJob, setClipJob,
     beginRelink, relinkFile, beginTrackInsert, insertTrackFiles, exportMg, convertToVideo,
-    innerW, visibleWindow, rowHeightOf, tracksHeight,
+    innerW, visibleWindow, visibleTrackWindow, rowHeightOf, trackRowHeight, tracksHeight,
     majorFrames, minorFrames, minorTicksPerMajor, rulerSpanFrames,
     frameFromClientX, trackFromClientY, copyCaptionSelections, pasteCaptionClipboard,
     pointer, drag, marquee, pickDrag, startPick, onPointerMove, onPointerUp, onPointerCancel,
@@ -54,6 +55,33 @@ export function Timeline(props: TimelineProps) {
     clearHoverPreview, updateHoverPreview, startSeekGesture, updateSeekGesture, finishSeekGesture,
     markers, zoneIn, zoneOut, editing, editMarker, setEditMarker, pinnedItemIds,
   } = useTimelineController(props);
+
+  const pinnedTrackIds = new Set<string>();
+  if (drag?.baseTrack) pinnedTrackIds.add(drag.baseTrack);
+  if (drag?.targetTrack) pinnedTrackIds.add(drag.targetTrack);
+  const penItem = pointer.penDrag ? indexes.itemById.get(pointer.penDrag.itemId) : null;
+  if (penItem) pinnedTrackIds.add(penItem.track);
+  if (captionMenu?.id) pinnedTrackIds.add(captionMenu.id);
+  if (duckMenu?.id) pinnedTrackIds.add(duckMenu.id);
+  if (trackMenu?.trackId) pinnedTrackIds.add(trackMenu.trackId);
+  const contextItem = ctxMenu ? indexes.itemById.get(ctxMenu.id) : null;
+  if (contextItem) pinnedTrackIds.add(contextItem.track);
+  const contextTransition = transitionMenu
+    ? (state.transitions ?? []).find((entry) => entry.id === transitionMenu.id)
+    : null;
+  if (contextTransition) pinnedTrackIds.add(contextTransition.trackId);
+  if (libDropTarget?.startsWith('track:')) pinnedTrackIds.add(libDropTarget.slice('track:'.length));
+  const renderedTrackIndexes = new Set<number>();
+  for (let index = visibleTrackWindow.startIndex; index < visibleTrackWindow.endIndex; index += 1) {
+    renderedTrackIndexes.add(index);
+  }
+  for (const trackId of pinnedTrackIds) {
+    const index = trackIndexById.get(trackId);
+    if (index !== undefined) renderedTrackIndexes.add(index);
+  }
+  const renderedTrackEntries = [...renderedTrackIndexes]
+    .sort((left, right) => left - right)
+    .flatMap((index) => trackIds[index] ? [{ trackId: trackIds[index]!, index }] : []);
 
   return (
     <section
@@ -125,8 +153,11 @@ The playhead line/triangle is pointerEvents:none, click it to click the ruler - 
             pinnedMarkerId={editMarker}
           />
 
-          {/* tracks */}
-          {trackIds.map((trackId) => {
+          {/* Vertically virtualized tracks. Horizontal clip virtualization is
+              handled inside each TrackLane, so dense projects only mount the
+              rows and clips near the viewport. */}
+          <div className="cc-track-stack" style={{ position: 'relative', height: tracksHeight }}>
+          {renderedTrackEntries.map(({ trackId, index: trackIndex }) => {
             const meta = metaOf(trackId);
             const alias = trackAlias(state, trackId);
             const config = state.tracks?.[trackId] ?? {};
@@ -143,7 +174,11 @@ The playhead line/triangle is pointerEvents:none, click it to click the ruler - 
             const customName = config.name || undefined;
             const deletePlan = trackDeletePlan(state, trackId);
             return (
-              <div key={trackId} className="cc-track-row" style={{ height: rowHeightOf(trackId), background: isDropTarget ? `color-mix(in srgb, ${theme.success} 15%, ${theme.bg})` : undefined }}>
+              <div key={trackId} className="cc-track-row" style={{
+                position: 'absolute', top: trackIndex * trackRowHeight, left: 0, right: 0,
+                height: rowHeightOf(trackId),
+                background: isDropTarget ? `color-mix(in srgb, ${theme.success} 15%, ${theme.bg})` : undefined,
+              }}>
                 <TrackHead
                   trackId={trackId} kind={meta.kind} trackName={titleName} customName={customName} config={headConfig}
                   deleteBlockedReason={deletePlan.blockedReason}
@@ -213,7 +248,7 @@ The playhead line/triangle is pointerEvents:none, click it to click the ruler - 
                   onCopyCue={() => { copyCaptionSelections(); }}
                   onPasteCue={pasteCaptionClipboard}
                   onDelete={(laneId, index) => trackCaptions && commands.updateCaptions(removeManualCue(trackCaptions, laneId, index), trackId)} /> : <TrackLane
-                  trackId={trackId} indexes={indexes} state={state} commands={commands} pointer={pointer}
+                  trackId={trackId} trackIndexById={trackIndexById} indexes={indexes} state={state} commands={commands} pointer={pointer}
                   editMode={editMode} pickMode={pickMode} locked={locked} hidden={hidden} muted={config.muted ?? false}
                   px={px} rowHeight={rowHeightOf(trackId)} visibleWindow={visibleWindow}
                   pinnedItemIds={pinnedItemIds}
@@ -242,6 +277,7 @@ The playhead line/triangle is pointerEvents:none, click it to click the ruler - 
               </div>
             );
           })}
+          </div>
 
           {/* snap guide — appears while a drag edge is locked onto a target */}
           {drag && drag.snapAt !== null && (
@@ -313,7 +349,7 @@ The playhead line/triangle is pointerEvents:none, click it to click the ruler - 
       <input
         ref={relinkInputRef}
         type="file"
-        accept="video/*,audio/*,image/*,.gif,.svg"
+        accept={`${VIDEO_FILE_PICKER_ACCEPT},audio/*,image/*,.gif,.svg`}
         hidden
         onChange={(event) => { void relinkFile(event.currentTarget.files); }}
       />

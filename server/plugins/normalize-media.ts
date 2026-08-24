@@ -8,6 +8,8 @@ import {
   type NormalizeAdmission,
   type NormalizeEncodeContext,
 } from '../media-normalization.ts';
+import type { MediaWorkAdmissionLike } from '../media-work-admission.ts';
+import { VIDEO_FILE_EXTENSION_SET } from '../../shared/media-file-extensions.ts';
 import {
   normalizeMediaFile,
   NormalizeMediaProbeError,
@@ -27,16 +29,6 @@ export {
 export type { NormalizeEncodeContext } from '../media-normalization.ts';
 
 const MAX_JSON = 8 * 1024;
-const VIDEO_EXTENSIONS: Record<string, true> = {
-  '.mp4': true,
-  '.mov': true,
-  '.webm': true,
-  '.mkv': true,
-  '.m4v': true,
-  '.avi': true,
-  '.mpeg': true,
-  '.mpg': true,
-};
 const PASSTHROUGH_EXTENSIONS: Record<string, true> = {
   '.jpg': true,
   '.jpeg': true,
@@ -57,6 +49,7 @@ const PASSTHROUGH_EXTENSIONS: Record<string, true> = {
 
 export interface NormalizeMediaPluginOptions {
   readonly admission?: NormalizeAdmission;
+  readonly mediaWorkAdmission?: MediaWorkAdmissionLike;
   readonly encoderHook?: (
     context: NormalizeEncodeContext,
     encode: () => Promise<void>,
@@ -171,6 +164,7 @@ async function normalizeVideoRequest(context: NormalizeRouteContext): Promise<vo
       targetFps: context.body.targetFps,
       signal: abort.signal,
       admission: context.options.admission,
+      mediaWorkAdmission: context.options.mediaWorkAdmission,
       encoderHook: context.options.encoderHook,
       publishR2: true,
       uploadsDirectory: uploadDir(),
@@ -226,7 +220,7 @@ async function handleNormalizeRequest(
     sendJson(res, 200, { ok: true, path: src, normalized: false, reason: 'not a video master' });
     return;
   }
-  if (!(extension in VIDEO_EXTENSIONS) && !body.force) {
+  if (!VIDEO_FILE_EXTENSION_SET.has(extension) && !body.force) {
     sendJson(res, 200, { ok: true, path: src, normalized: false, reason: 'skip non-video extension' });
     return;
   }
@@ -237,12 +231,22 @@ export function normalizeMediaPlugin(options: NormalizeMediaPluginOptions = {}):
   return {
     name: 'yolocut-normalize-media',
     configureServer(server) {
-      server.middlewares.use('/api/normalize-media', async (req, res) => {
+      server.middlewares.use('/api/normalize-media', (req, res) => {
         if (req.method !== 'POST') {
           sendJson(res, 405, { error: 'method not allowed — use POST' });
           return;
         }
-        await handleNormalizeRequest(req, res, options, server.config.logger);
+        // Connect does not await promises returned by middleware. Keep the
+        // rejection boundary inside the handler so malformed bodies and other
+        // pre-probe failures produce a JSON response instead of closing the
+        // HTTP socket and surfacing as an opaque client-side fetch failure.
+        void handleNormalizeRequest(req, res, options, server.config.logger).catch((error) => {
+          if (!res.headersSent && !res.writableEnded && !res.destroyed) {
+            sendNormalizeError(res, error, (message) => server.config.logger.error(message));
+          } else if (!res.writableEnded && !res.destroyed) {
+            res.end();
+          }
+        });
       });
     },
   };

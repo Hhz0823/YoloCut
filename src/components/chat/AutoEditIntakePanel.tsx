@@ -8,6 +8,7 @@ import {
   type AutoEditHardwarePlan,
 } from '../../../shared/auto-edit-batch';
 import type { AutoEditSourceSelection } from '../../../shared/auto-edit-source';
+import { VIDEO_FILE_PICKER_ACCEPT, isVideoFileName } from '../../../shared/media-file-extensions';
 import { fetchModelPackCatalog, type ModelPackCatalogEntry } from '../../../shared/model-packs';
 import { createAutoEditBatch } from '../../persist/autoEditBatchStore';
 import { theme } from '../../theme';
@@ -152,7 +153,7 @@ export function AutoEditIntakePanel({ controller }: { controller: ChatPanelContr
   };
 
   const importReference = (files: File[]) => {
-    const videos = files.filter((file) => file.type.startsWith('video/') || /\.(?:mp4|mov|mkv|webm|m4v)$/i.test(file.name));
+    const videos = files.filter((file) => file.type.startsWith('video/') || isVideoFileName(file.name));
     if (!videos.length) {
       setError(t('成片参考必须是视频文件。'));
       return;
@@ -225,7 +226,7 @@ export function AutoEditIntakePanel({ controller }: { controller: ChatPanelContr
       </div>
       <input ref={editInput} hidden type="file" accept=".txt,.md,.markdown,.srt,.csv" onChange={(event) => void readScript(event.target.files?.[0], 'edit')} />
       <input ref={narrationInput} hidden type="file" accept=".txt,.md,.markdown,.srt,.csv" onChange={(event) => void readScript(event.target.files?.[0], 'narration')} />
-      <input ref={referenceInput} hidden type="file" accept="video/*,.mkv,.m4v" multiple onChange={(event) => importReference(Array.from(event.target.files ?? []))} />
+      <input ref={referenceInput} hidden type="file" accept={VIDEO_FILE_PICKER_ACCEPT} multiple onChange={(event) => importReference(Array.from(event.target.files ?? []))} />
       <ModelStatus pack={pack} t={t} onOpenSettings={props.onOpenSettings} />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10.5, color: theme.textDim }}>
         <span>{hardware.note}</span>

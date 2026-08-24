@@ -19,6 +19,15 @@ for (const name of ['yolocut']) {
   }
   const skillVersion = /## Skill version\s+\n`([^`]+)`/.exec(skill)?.[1];
   assert.equal(skillVersion, serverBaseline, `${name} skill version must match the MCP baseline`);
+
+  const recovery = readFileSync(resolve(skillRoot, 'references/known-errors.md'), 'utf8')
+    .replace(/\r\n?/g, '\n');
+  assert.match(recovery, /`awaiting_review` means the draft is ready but not applied/);
+  assert.doesNotMatch(recovery, /\bpending_review\b/);
+  for (const legacyName of ['chatcut', 'openchatcut']) {
+    assert.ok(recovery.includes(`\`${legacyName}\``), `missing legacy name ${legacyName}`);
+    assert.ok(recovery.includes(`\`${legacyName}_status\``), `missing legacy status ${legacyName}_status`);
+  }
 }
 
 console.log(`external skill verify: YoloCut primary entry OK (${serverBaseline})`);

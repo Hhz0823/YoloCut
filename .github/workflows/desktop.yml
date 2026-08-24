@@ -29,8 +29,8 @@ jobs:
           # onnxruntime-node@1.22.0 postinstall fails on ubuntu CI runners (NuGet
           # misses the win-x64 CUDA runtime). CI validates logic only, so skip it.
           ONNXRUNTIME_NODE_INSTALL: 'skip'
-      - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Install media test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg xvfb
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -41,7 +41,13 @@ jobs:
             exit 1
           fi
       - run: npm run lint
-      - run: npm test
+      - name: Ensure Remotion browser
+        run: node -e "import('@remotion/renderer').then(m => m.ensureBrowser()).then(() => console.log('browser ready'))"
+      - name: Run test suite
+        env:
+          ELECTRON_DISABLE_SANDBOX: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run --auto-servernum npm test
       - run: npm run verify:agent-skill
       - run: npm run build
 

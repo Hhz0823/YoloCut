@@ -2,8 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { copyFile, mkdir, stat, unlink } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { ffmpegBin, ffprobeBin } from '../server/media-binaries.ts';
-import { ffmpegThreadArgs, spawnMediaProcess } from '../server/media-process.ts';
+import { ffmpegBin, runFfprobeFallback } from '../server/media-binaries.ts';
+import {
+  ffmpegThreadArgs,
+  mediaProcessArgs,
+  spawnMediaProcess,
+  type MediaToolKind,
+} from '../server/media-process.ts';
 import { resolveUploadFile, uploadDir } from '../server/media-dir.ts';
 import { normalizeSha256Hash } from '../shared/content-hash.ts';
 import { sha256File } from '../shared/node-content-hash.ts';
@@ -47,10 +52,11 @@ function run(
   args: string[],
   timeoutMs: number,
   signal?: AbortSignal,
+  kind: MediaToolKind = 'ffmpeg',
 ): Promise<string> {
   throwIfNormalizationAborted(signal);
   const deferred = Promise.withResolvers<string>();
-  const child = spawnMediaProcess(command, [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawnMediaProcess(command, mediaProcessArgs(kind, args), { stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '';
   let stderr = '';
   let terminalError: Error | undefined;
@@ -141,11 +147,15 @@ export async function createTransparentMovProxy(
   if (extname(storedName).toLowerCase() !== '.mov' || basename(storedName) !== storedName) return null;
   const source = resolveUploadFile(storedName);
   if (!source) return null;
-  const probe = JSON.parse(await run(ffprobeBin(), [
+  const probeArgs = [
     '-v', 'error', '-select_streams', 'v:0',
     '-show_entries', 'stream=codec_name,profile,pix_fmt:stream_tags=alpha_mode',
     '-of', 'json', source,
-  ], 10_000, signal)) as { streams?: ProbeStream[] };
+  ];
+  const { value: probeText } = await runFfprobeFallback((command) => (
+    run(command, probeArgs, 10_000, signal, 'ffprobe')
+  ));
+  const probe = JSON.parse(probeText) as { streams?: ProbeStream[] };
   if (!isTransparentMovProbe(probe.streams?.[0])) return null;
 
   const proxyName = `${basename(storedName, '.mov')}.alpha.webm`;

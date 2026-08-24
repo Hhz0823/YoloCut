@@ -6,8 +6,9 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { isSafeUploadName, resolveUploadFile, serveDiskFile, uploadDir, uploadReadDirs } from '../media-dir.ts';
-import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
-import { resolveHwDecodeArgs } from '../media-acceleration.ts';
+import { ffmpegBin, runFfprobeFallback } from '../media-binaries.ts';
+import { runVideoDecodeFallback } from '../media-decoder-fallback.ts';
+import { resolveRuntimeVideoDecodeAttempts } from '../media-runtime-decode.ts';
 import { ffmpegThreadArgs, spawnMediaProcess } from '../media-process.ts';
 import { DerivativeQueue, derivativeQueue, type DerivativeWork } from '../derivative-queue.ts';
 import { handlePreviewProxy, handlePreviewProxyFile, runPreviewProcess } from '../preview-proxy.ts';
@@ -31,10 +32,16 @@ const PREVIEW_GC_INTERVAL_MS = 5 * 60_000;
 const ORPHAN_PREVIEW_TEMP_AGE_MS = 24 * 60 * 60_000;
 const ORPHAN_PREVIEW_TEMP = /\.[0-9a-f]{8}-[0-9a-f-]{27}\.tmp\.[a-z0-9]{1,8}$/i;
 const activePreviewPaths = new Set<string>();
-// A single long-video proxy is intentionally serialized. Waveforms, posters
-// and filmstrips keep using the general derivative queue, so proxy creation
-// cannot launch two multi-hour transcodes and starve interactive editing.
-const proxyDerivativeQueue = new DerivativeQueue(1, false);
+// Long-video proxies use their own queue. Low/balanced hosts stay serialized;
+// a verified performance profile may run two hardware pipelines so NVDEC and
+// NVENC are not left idle while waveforms/posters use the general CPU queue.
+let proxyDerivativeQueue: Promise<DerivativeQueue> | null = null;
+function getProxyDerivativeQueue(): Promise<DerivativeQueue> {
+  proxyDerivativeQueue ??= resolveMediaPerformanceProfile()
+    .then((profile) => new DerivativeQueue(profile.budgets.proxyConcurrency, false))
+    .catch(() => new DerivativeQueue(1, false));
+  return proxyDerivativeQueue;
+}
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
@@ -216,23 +223,27 @@ function run(cmd: string, args: string[], signal: AbortSignal, timeoutMs = FFMPE
   });
 }
 
-interface Probe { durationMs: number; width: number; height: number; hasAudio: boolean }
+interface Probe { durationMs: number; width: number; height: number; codec: string; hasAudio: boolean }
 
 async function probe(file: string, signal: AbortSignal): Promise<Probe> {
-  const { stdout } = await runPreviewProcess(ffprobeBin(), [
+  const args = [
     '-v', 'error', '-print_format', 'json',
-    '-show_entries', 'format=duration:stream=codec_type,width,height',
+    '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height',
     file,
-  ], signal, 30_000);
+  ];
+  const { value: { stdout } } = await runFfprobeFallback((command) => (
+    runPreviewProcess(command, args, signal, 30_000, 'ffprobe')
+  ));
   const parsed = JSON.parse(stdout) as {
     format?: { duration?: string };
-    streams?: Array<{ codec_type?: string; width?: number; height?: number }>;
+    streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number }>;
   };
   const video = parsed.streams?.find((stream) => stream.codec_type === 'video');
   return {
     durationMs: Math.max(0, Math.round(Number(parsed.format?.duration ?? 0) * 1000)),
     width: video?.width ?? 0,
     height: video?.height ?? 0,
+    codec: video?.codec_name?.toLowerCase() ?? '',
     hasAudio: !!parsed.streams?.some((stream) => stream.codec_type === 'audio'),
   };
 }
@@ -308,18 +319,25 @@ async function buildFilmstrip(file: string, probeResult: Probe, out: string, sig
   const frameCount = Math.min(desiredFrames, Math.floor(MAX_STRIP_WIDTH / cellWidth));
   const work = await mkdtemp(join(tmpdir(), 'cc-strip-'));
   try {
+    let decoderAttempts = await resolveRuntimeVideoDecodeAttempts(probeResult.codec);
     const cells = Array.from({ length: frameCount }, (_, index) => ({
       time: ((index + 0.5) / frameCount) * seconds,
       path: join(work, `f-${String(index).padStart(3, '0')}.jpg`),
     }));
     for (const cell of cells) {
-      await run(ffmpegBin(), [
-        '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-        ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)),
-        '-ss', String(cell.time), '-i', file, '-frames:v', '1',
-        '-vf', `scale=${cellWidth}:${STRIP_HEIGHT}:force_original_aspect_ratio=increase,crop=${cellWidth}:${STRIP_HEIGHT}`,
-        '-q:v', '5', cell.path,
-      ], signal);
+      const winner = await runVideoDecodeFallback(decoderAttempts, async (attempt) => {
+        await run(ffmpegBin(), [
+          '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+          ...attempt.inputArgs,
+          '-ss', String(cell.time), '-i', file, '-frames:v', '1',
+          '-vf', `scale=${cellWidth}:${STRIP_HEIGHT}:force_original_aspect_ratio=increase,crop=${cellWidth}:${STRIP_HEIGHT}`,
+          '-q:v', '5', cell.path,
+        ], signal);
+        return attempt;
+      }, { signal, cleanup: () => unlink(cell.path).catch(() => undefined) });
+      // The first cell teaches the rest which decoder works, but the remaining
+      // attempts stay available for a later corrupt GOP or transient device loss.
+      decoderAttempts = [winner, ...decoderAttempts.filter((attempt) => attempt !== winner)];
     }
     const present = cells.filter((cell) => existsSync(cell.path));
     if (!present.length) throw new Error('no frames extracted');
@@ -333,14 +351,16 @@ async function buildFilmstrip(file: string, probeResult: Probe, out: string, sig
   }
 }
 
-async function buildFrame(file: string, time: number, out: string, signal: AbortSignal): Promise<void> {
-  await run(ffmpegBin(), [
+async function buildFrame(file: string, codec: string, time: number, out: string, signal: AbortSignal): Promise<void> {
+  const attempts = await resolveRuntimeVideoDecodeAttempts(codec);
+  await runVideoDecodeFallback(attempts, (attempt) => run(ffmpegBin(), [
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-    ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)),
+    ...attempt.inputArgs,
     '-ss', String(time), '-i', file, '-frames:v', '1', '-an',
     '-vf', 'scale=960:540:force_original_aspect_ratio=decrease',
     '-q:v', '3', out,
-  ], signal, 30_000);
+  ], signal, 30_000),
+  { signal, cleanup: () => unlink(out).catch(() => undefined) });
 }
 
 async function readCachedPreview(path: string): Promise<Buffer> {
@@ -484,7 +504,7 @@ async function handleMediaFrame(req: IncomingMessage, res: ServerResponse, logEr
         const probeResult = await probe(hit.file, signal);
         if (!probeResult.width || !probeResult.height) throw new Error('not a video');
         const time = Math.min(requested, Math.max(0, probeResult.durationMs / 1000 - 0.001));
-        await atomicPreviewBuild(cache, (tmp) => buildFrame(hit.file, time, tmp, signal));
+        await atomicPreviewBuild(cache, (tmp) => buildFrame(hit.file, probeResult.codec, time, tmp, signal));
       });
     }
     if (res.destroyed) return;
@@ -506,7 +526,7 @@ async function handleMediaPoster(req: IncomingMessage, res: ServerResponse, logE
         const probeResult = await probe(hit.file, signal);
         if (!probeResult.width || !probeResult.height) throw new Error('not a video');
         const time = Math.min(1, Math.max(0, probeResult.durationMs / 2000));
-        await atomicPreviewBuild(cache, (tmp) => buildFrame(hit.file, time, tmp, signal));
+        await atomicPreviewBuild(cache, (tmp) => buildFrame(hit.file, probeResult.codec, time, tmp, signal));
       });
     }
     if (res.destroyed) return;
@@ -530,7 +550,8 @@ export function mediaPreviewPlugin(): Plugin {
           key: string,
           work: DerivativeWork<T>,
           protectedPath = key,
-        ) => runDerivative(req, res, key, work, protectedPath, proxyDerivativeQueue),
+        ) => getProxyDerivativeQueue()
+          .then((queue) => runDerivative(req, res, key, work, protectedPath, queue)),
         cacheBudgetBytes: previewMaxBytes,
         serveCached: serveCachedFile, sendJson, logError,
         handleError: (res: ServerResponse, label: string, error: unknown) => handleDerivativeError(res, logError, label, error),

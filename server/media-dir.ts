@@ -15,6 +15,7 @@ import {
   type RuntimeProfile,
 } from './runtime-profile.ts';
 import { LEGACY_MEDIA_DIR_ENV } from '../shared/product-brand.ts';
+import { VIDEO_MIME_BY_EXTENSION } from '../shared/media-file-extensions.ts';
 
 export const DEFAULT_UPLOAD_DIR = join(process.cwd(), 'public', 'media', 'uploads');
 
@@ -235,7 +236,7 @@ export function resolveOrHydrateUploadFile(
 // ── Directly stream disk files (the custom directory is outside public/ and cannot be reached by Vite static service) ──────────
 
 const MIME: Record<string, string> = {
-  mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  ...Object.fromEntries(Object.entries(VIDEO_MIME_BY_EXTENSION).map(([extension, mime]) => [extension.slice(1), mime])),
   mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
   ogg: 'audio/ogg', opus: 'audio/opus', flac: 'audio/flac',
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',

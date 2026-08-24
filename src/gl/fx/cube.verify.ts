@@ -1,7 +1,16 @@
 // .cube 解析器 + fxPasses LUT 挂载语义检查(npx tsx src/gl/fx/cube.check.ts)
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { parseCube, primeCube, getCubeSync, cubeSettled, type CubeLut } from './cube';
+import {
+  clearCubeCacheForVerify,
+  configureCubeCacheBudget,
+  cubeCacheStats,
+  parseCube,
+  primeCube,
+  getCubeSync,
+  cubeSettled,
+  type CubeLut,
+} from './cube';
 import { fxPasses, type FxDef } from './uniforms';
 
 // ── 1. 最小 2³ 恒等 LUT ──────────────────────────────────────────────
@@ -87,6 +96,23 @@ const def: FxDef = {
   const passes = fxPasses([{ def }], 0);
   assert.equal(passes[0].lut3d, undefined);
   assert.equal(passes[0].uniforms?.u_intensity, 0);
+}
+
+{
+  clearCubeCacheForVerify();
+  configureCubeCacheBudget({ maxEntries: 1, maxBytes: 1024 ** 2 });
+  const fake = parseCube(identity2);
+  primeCube('test://one', fake);
+  primeCube('test://two', fake);
+  assert.equal(cubeSettled('test://one'), false, 'old LUTs are evicted from the bounded decoded cache');
+  assert.equal(cubeSettled('test://two'), true);
+  assert.deepEqual(cubeCacheStats(), {
+    entries: 1,
+    bytes: fake.data.byteLength,
+    maxEntries: 1,
+    maxBytes: 1024 ** 2,
+  });
+  clearCubeCacheForVerify();
 }
 
 console.log('cube.check: ok (解析/域归一/8 错误面/真 33³ 双文件/fxPasses 三态)');

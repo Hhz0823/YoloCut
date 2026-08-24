@@ -19,10 +19,11 @@ re-read project state before rebuilding the draft.
 
 ## Proposal is waiting
 
-`pending_review` means the draft is ready but not applied. Ask the user to
+`awaiting_review` means the draft is ready but not applied. Ask the user to
 approve it inside YoloCut, then continue polling `get_edit_session`.
 
 ## Legacy configuration
 
-An MCP server registered as `yolocut` and calls to `yolocut_status`
-remain supported. They use the same YoloCut endpoint and project data.
+MCP servers registered under the former `chatcut` or `openchatcut` names and
+calls to `chatcut_status` or `openchatcut_status` remain supported. They use
+the same YoloCut endpoint and project data.

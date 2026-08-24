@@ -142,6 +142,7 @@ export default {
   '高性能流畅档': 'Performance smooth tier',
   'NVDEC → CUDA 缩放 → NVENC': 'NVDEC → CUDA scale → NVENC',
   '软件编码回退': 'Software encode fallback',
+  '第三方解码回退：{decoders}': 'Third-party decoder fallback: {decoders}',
   '流畅：使用轻量副本，播放更流畅': 'Smooth: plays a lightweight copy for fluid playback',
   '自动：跟随画质策略（画质优先=高清，均衡=流畅）': 'Auto: follows the quality policy (Master=high quality, Balanced=smooth)',
   '正在导入媒体…': 'Importing media…',

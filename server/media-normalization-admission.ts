@@ -1,6 +1,33 @@
+import { availableParallelism, totalmem } from 'node:os';
+import { resolveMediaCpuBudget } from './media-process.ts';
+
 // Shared bounded admission with per-target serialization and abortable queue waits.
-export const NORMALIZE_CONCURRENCY = 2;
-export const NORMALIZE_MAX_QUEUED = 8;
+export interface NormalizeAdmissionLimits {
+  readonly concurrency: number;
+  readonly maxQueued: number;
+}
+
+export function resolveNormalizeAdmissionLimits(
+  cores: number,
+  totalMemoryBytes: number,
+): NormalizeAdmissionLimits {
+  const media = resolveMediaCpuBudget(cores, totalMemoryBytes);
+  // Normalization can involve decode, scaling, encode and a large write at the
+  // same time. Keep this lane at two even when the shared media budget allows
+  // a third lightweight derivative job.
+  const concurrency = Math.min(2, media.backgroundProcessConcurrency);
+  return { concurrency, maxQueued: concurrency * 4 };
+}
+
+const hostLimits = resolveNormalizeAdmissionLimits(availableParallelism(), totalmem());
+const configuredConcurrency = Number.parseInt(process.env.YOLOCUT_NORMALIZE_CONCURRENCY ?? '', 10);
+const configuredMaxQueued = Number.parseInt(process.env.YOLOCUT_NORMALIZE_MAX_QUEUED ?? '', 10);
+export const NORMALIZE_CONCURRENCY = Number.isFinite(configuredConcurrency)
+  ? Math.max(1, Math.min(4, configuredConcurrency))
+  : hostLimits.concurrency;
+export const NORMALIZE_MAX_QUEUED = Number.isFinite(configuredMaxQueued)
+  ? Math.max(0, Math.min(32, configuredMaxQueued))
+  : hostLimits.maxQueued;
 
 export type ReleaseNormalizePermit = () => void;
 

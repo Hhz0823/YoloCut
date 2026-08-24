@@ -31,11 +31,42 @@ export const MIN_TIME_ZOOM = 0.02; // long timelines (3–8 min) must still fit 
 export const RULER_LABEL_MIN_PX = 52;
 
 export const TIMELINE_OVERSCAN_PX = 480;
+export const TIMELINE_TRACK_OVERSCAN_PX = 180;
 export const MAX_RULER_TICKS = 190;
 
 export interface TimelineFrameWindow {
   startFrame: number;
   endFrame: number;
+}
+
+export interface TimelineTrackWindow {
+  startIndex: number;
+  endIndex: number;
+  offsetTop: number;
+}
+
+/** Vertical track virtualization. The ruler occupies the first fixed-height
+ * row, so scrollTop is translated into track-local coordinates before adding
+ * overscan. */
+export function timelineTrackWindow(
+  scrollTop: number,
+  clientHeight: number,
+  rowHeight: number,
+  trackCount: number,
+  overscanPx = TIMELINE_TRACK_OVERSCAN_PX,
+): TimelineTrackWindow {
+  const count = Math.max(0, Math.floor(trackCount) || 0);
+  const height = Math.max(1, Number(rowHeight) || TRACK_ROW);
+  if (!count) return { startIndex: 0, endIndex: 0, offsetTop: 0 };
+  if (!(clientHeight > 0)) {
+    const endIndex = Math.min(count, 12);
+    return { startIndex: 0, endIndex, offsetTop: 0 };
+  }
+  const startPx = Math.max(0, scrollTop - RULER_H - Math.max(0, overscanPx));
+  const endPx = Math.max(startPx + 1, scrollTop + clientHeight - RULER_H + Math.max(0, overscanPx));
+  const startIndex = Math.max(0, Math.min(count - 1, Math.floor(startPx / height)));
+  const endIndex = Math.max(startIndex + 1, Math.min(count, Math.ceil(endPx / height)));
+  return { startIndex, endIndex, offsetTop: startIndex * height };
 }
 
 export interface TimelineTrackItemIndex {
@@ -89,7 +120,9 @@ function trackItemWindowIndex(items: readonly TimelineItem[]): TimelineTrackItem
   return { items: sorted, maxEndFrames };
 }
 
-export function buildTimelineIndexes(state: TimelineState): TimelineIndexes {
+export function buildTimelineIndexes(
+  state: Pick<TimelineState, 'items' | 'transitions'>,
+): TimelineIndexes {
   const itemsByTrack = new Map<TrackId, TimelineItem[]>();
   const itemById = new Map<string, TimelineItem>();
   const itemOrderById = new Map<string, number>();

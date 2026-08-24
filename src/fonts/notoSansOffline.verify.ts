@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, resolve, sep } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openBrowser, type HeadlessBrowser } from '@remotion/renderer';
 import { FONT_CATALOG } from './googleFontCatalog';
@@ -20,6 +20,47 @@ assert.equal(catalogEntries.length, 1, 'the font catalog must not expose duplica
 assert.equal(catalogEntries[0]?.source, 'bundled', 'the font picker must report the offline source truthfully');
 
 const fontRoot = resolve(fileURLToPath(new URL('../../assets/fonts/noto-sans-sc/', import.meta.url)));
+type BrowserChoice = { path: string; chromeMode: 'headless-shell' | 'chrome-for-testing' };
+
+function findPreparedBrowser(root: string, depth = 4): string | null {
+  if (depth < 0 || !existsSync(root)) return null;
+  const expected = process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell';
+  for (const name of readdirSync(root)) {
+    const candidate = join(root, name);
+    const entry = statSync(candidate);
+    if (entry.isFile() && name === expected) return candidate;
+    if (entry.isDirectory()) {
+      const nested = findPreparedBrowser(candidate, depth - 1);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function resolveBrowserChoice(): BrowserChoice | null {
+  const configured = process.env.CC_BROWSER_EXECUTABLE?.trim();
+  if (configured && existsSync(configured)) {
+    return { path: configured, chromeMode: configured.includes('headless-shell') ? 'headless-shell' : 'chrome-for-testing' };
+  }
+  const prepared = findPreparedBrowser(resolve('desktop-dist', 'chrome-headless-shell'));
+  if (prepared) return { path: prepared, chromeMode: 'headless-shell' };
+  const systemCandidates = process.platform === 'win32'
+    ? [
+        process.env.PROGRAMFILES ? join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+        process.env['PROGRAMFILES(X86)'] ? join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+        process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+        process.env.PROGRAMFILES ? join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : '',
+      ]
+    : process.platform === 'darwin'
+      ? [
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+        ]
+      : ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+  const system = systemCandidates.find((candidate) => candidate && existsSync(candidate));
+  return system ? { path: system, chromeMode: 'chrome-for-testing' } : null;
+}
+
 const html = `<!doctype html>
 <html><head><link rel="stylesheet" href="/fonts/noto-sans-sc/noto-sans-sc.css"></head>
 <body><p style="font: 400 32px 'Noto Sans SC'">离线字体渲染 YoloCut 123</p></body></html>`;
@@ -58,7 +99,14 @@ assert.ok(address && typeof address !== 'string');
 
 let browser: HeadlessBrowser | undefined;
 try {
-  browser = await openBrowser('chrome', { logLevel: 'error' });
+  const browserChoice = resolveBrowserChoice();
+  browser = await openBrowser('chrome', {
+    logLevel: 'error',
+    ...(browserChoice ? {
+      browserExecutable: browserChoice.path,
+      chromeMode: browserChoice.chromeMode,
+    } : {}),
+  });
   const page = await browser.newPage({
     context: () => null,
     logLevel: 'error',

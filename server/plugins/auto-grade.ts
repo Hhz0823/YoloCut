@@ -1,9 +1,10 @@
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { spawn } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
-import { resolveHwDecodeArgs } from '../media-acceleration.ts';
+import { runVideoDecodeFallback } from '../media-decoder-fallback.ts';
+import { spawnMediaProcess } from '../media-process.ts';
+import { resolveRuntimeVideoDecodeAttempts } from '../media-runtime-decode.ts';
 import { isSafeUploadName, resolveUploadFile } from '../media-dir.ts';
 import {
   analyzeSignalFrames,
@@ -54,7 +55,7 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 function runCapture(command: string, args: string[], timeoutMs = PROCESS_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnMediaProcess(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -93,6 +94,7 @@ function uploadNameFromSrc(src: string): string | null {
 }
 
 interface ProbeStream {
+  codec_name?: string;
   pix_fmt?: string;
   bits_per_raw_sample?: string;
   color_range?: string;
@@ -150,7 +152,7 @@ export interface AnalyzeColorOptions {
 export async function analyzeColorInFile(file: string, options: AnalyzeColorOptions = {}) {
   const probeText = await runCapture(ffprobeBin(), [
     '-v', 'error', '-select_streams', 'v:0',
-    '-show_entries', 'stream=pix_fmt,bits_per_raw_sample,color_range,color_transfer,color_primaries,color_space,duration:format=duration',
+    '-show_entries', 'stream=codec_name,pix_fmt,bits_per_raw_sample,color_range,color_transfer,color_primaries,color_space,duration:format=duration',
     '-of', 'json', file,
   ], 30_000);
   const probe = JSON.parse(probeText) as ProbeResult;
@@ -167,16 +169,20 @@ export async function analyzeColorInFile(file: string, options: AnalyzeColorOpti
   // a very low sampling FPS; clamping to normal playback rates would only
   // inspect the beginning of long media.
   const sampleFps = autoGradeSampleFps(durationSeconds);
-  const args = ['-nostdin', '-hide_banner', '-loglevel', 'error'];
-  if (startSeconds > 0) args.push('-ss', startSeconds.toFixed(3));
-  args.push(...(await resolveHwDecodeArgs(ffmpegBin(), undefined)));
-  args.push('-i', file);
-  if (!isStill) args.push('-t', durationSeconds.toFixed(3));
-  args.push(
-    '-vf', `${isStill ? '' : `fps=${sampleFps.toFixed(3)},`}signalstats,metadata=print:file=-`,
-    '-frames:v', String(isStill ? 1 : SAMPLE_COUNT), '-an', '-f', 'null', '-',
-  );
-  const frames = parseSignalStats(await runCapture(ffmpegBin(), args));
+  const ffmpeg = ffmpegBin();
+  const attempts = await resolveRuntimeVideoDecodeAttempts(stream.codec_name);
+  const output = await runVideoDecodeFallback(attempts, (attempt) => {
+    const args = ['-nostdin', '-hide_banner', '-loglevel', 'error'];
+    if (startSeconds > 0) args.push('-ss', startSeconds.toFixed(3));
+    args.push(...attempt.inputArgs, '-i', file);
+    if (!isStill) args.push('-t', durationSeconds.toFixed(3));
+    args.push(
+      '-vf', `${isStill ? '' : `fps=${sampleFps.toFixed(3)},`}signalstats,metadata=print:file=-`,
+      '-frames:v', String(isStill ? 1 : SAMPLE_COUNT), '-an', '-f', 'null', '-',
+    );
+    return runCapture(ffmpeg, args);
+  });
+  const frames = parseSignalStats(output);
   if (!frames.length) throw new Error('ffmpeg signalstats returned no samples');
   return {
     ...analyzeSignalFrames(frames, profile),

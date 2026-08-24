@@ -6,7 +6,6 @@ import { VendorIcon } from './vendorIcons';
 import { Icon } from '../icons';
 import { CodexAccountCard } from './CodexAccountCard';
 import type { CodexAgentModel } from '../../../shared/codex-agent';
-import type { CodexSettingsController } from './useCodexSettings';
 import { shouldRenderModelPicker } from './codexReasoning';
 import { llmProviderConfigNames, normalizeLlmProvider } from '../../../shared/llm-providers';
 import { MODEL_CAPABILITY_OVERRIDES_KEY } from '../../../shared/model-capabilities';
@@ -18,6 +17,7 @@ import { LocalVoiceModelPane } from './LocalVoiceModelPane';
 import { SemanticModelPackPane } from './SemanticModelPackPane';
 import { SettingsNoteAction } from './SettingsNoteAction.tsx';
 import { ZCodeConnectionCard } from './ZCodeConnectionCard.tsx';
+import type { FieldCtx } from './settingsFieldContext';
 import {
   fieldPlaceholder, isModelField, modelValue, selectOptionLabel, selectOptions, vendorConfigured,
   type KeyStatusResponse, type SelectOption, type SettingsField, type SettingsVendorPage,
@@ -25,19 +25,7 @@ import {
 } from './settingsSchema';
 export const ON = theme.success; // Status green → Semantic token (graphite value ≈ original #4caf7d, light skin automatically changes to dark green)
 export const WARN = '#f77';    // Error / Clear warning (retain the original panel error color)
-
-/** Field rendering shared context: server status + temporary storage + plain text switch + temporary storage/clear callback. */
-export interface FieldCtx {
-  status: KeyStatusResponse | null;
-  values: Values;
-  reveal: boolean;
-  onStage: (field: SettingsField, raw: string) => void;
-  onToggleClear: (field: SettingsField) => void;
-  modelOptions: Record<string, readonly string[]>;
-  onModelsDiscovered: (name: string, models: readonly string[]) => void;
-  onServerSettingsApplied: (status: KeyStatusResponse, clearedFields: readonly string[]) => void;
-  codex: CodexSettingsController;
-}
+export type { FieldCtx } from './settingsFieldContext';
 
 const CAPABILITY_OVERRIDE_FIELD: SettingsField = {
   name: MODEL_CAPABILITY_OVERRIDES_KEY, label: '模型能力', kind: 'text', defaultLabel: '',
@@ -167,7 +155,11 @@ function LocalModelsPane({ page, fields, ctx }: {
           {t(description)}
         </div>
       </div>
-      {page.key === 'local/asr' && <LocalAsrPane fields={fields} ctx={ctx} />}
+      {page.key === 'local/asr' && (
+        <LocalAsrPane
+          settingsFields={fields.map((field) => <FieldRow key={field.name} field={field} ctx={ctx} />)}
+        />
+      )}
       {page.key === 'local/voice' && <LocalVoiceModelPane ctx={ctx} />}
       {page.key === 'local/music/packs' && <LocalModelPackPane
         packIds={['rhythm-lite', 'music-semantics-lite']}

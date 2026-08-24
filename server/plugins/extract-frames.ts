@@ -4,13 +4,15 @@
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isSafeUploadName, resolveUploadFile } from '../media-dir.ts';
 import { formatTimeLabel, tileContactSheet } from '../frame-grid.ts';
-import { ffmpegBin, ffprobeBin } from '../media-binaries.ts';
-import { resolveHwDecodeArgs } from '../media-acceleration.ts';
+import { ffmpegBin } from '../media-binaries.ts';
+import { runVideoDecodeFallback } from '../media-decoder-fallback.ts';
+import { probeVideoInfo } from '../media-probe.ts';
+import { resolveRuntimeVideoDecodeAttempts } from '../media-runtime-decode.ts';
 import { ffmpegThreadArgs, spawnMediaProcess } from '../media-process.ts';
 
 const MAX_JSON = 32 * 1024;
@@ -79,25 +81,6 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<void> {
   });
 }
 
-async function probeDurationMs(path: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const child = spawnMediaProcess(ffprobeBin(), [
-      '-v', 'error',
-      '-show_entries', 'format=duration',
-      '-of', 'default=nw=1:nk=1',
-      path,
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-    let out = '';
-    child.stdout?.on('data', (c: Buffer) => { out += String(c); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      const sec = Number(out.trim());
-      if (code === 0 && Number.isFinite(sec) && sec > 0) resolve(Math.round(sec * 1000));
-      else reject(new Error('ffprobe duration failed'));
-    });
-  });
-}
-
 /** Midpoints of N equal blocks in [fromMs, toMs). */
 export function sampleTimesMs(fromMs: number, toMs: number, count: number): number[] {
   const n = Math.max(1, Math.min(MAX_SAMPLES, Math.round(count)));
@@ -117,38 +100,50 @@ const SCENE_THRESHOLD = 0.08;
 const SCENE_ANALYSIS_TIMEOUT_MS = 20_000;
 
 /** The moment when the picture changes significantly (milliseconds, ascending order). Returns empty array on failure = caller falls back to uniform sampling.*/
-function sceneChangeTimesMs(input: string, fromMs: number, toMs: number): Promise<number[]> {
-  return (async () => {
-    const hwDecode = await resolveHwDecodeArgs(ffmpegBin(), undefined);
-    return new Promise((resolve) => {
+async function sceneChangeTimesMs(input: string, codec: string, fromMs: number, toMs: number): Promise<number[]> {
+  const attempts = await resolveRuntimeVideoDecodeAttempts(codec);
+  try {
+    return await runVideoDecodeFallback(attempts, (attempt) => new Promise((resolve, reject) => {
       const times: number[] = [];
-    const child = spawnMediaProcess(ffmpegBin(), [
-      '-nostdin', '-hide_banner', ...ffmpegThreadArgs(),
-      ...hwDecode,
-      '-ss', String(Math.max(0, fromMs) / 1000),
-      '-t', String(Math.max(0, toMs - fromMs) / 1000),
-      '-i', input,
-      '-an', '-sn',
-      '-vf', `scale=160:-2,fps=2,select='gt(scene,${SCENE_THRESHOLD})',showinfo`,
-      '-f', 'null', '-',
-    ], { stdio: ['ignore', 'ignore', 'pipe'] });
-    let tail = '';
-    const done = (): void => { child.kill('SIGKILL'); resolve(times); };
-    const timer = setTimeout(done, SCENE_ANALYSIS_TIMEOUT_MS);
-    child.stderr?.on('data', (chunk: Buffer) => {
-      // Streaming analysis of pts_time avoids storing the entire showinfo in memory
-      tail += String(chunk);
-      const lines = tail.split('\n');
-      tail = lines.pop() ?? '';
-      for (const line of lines) {
-        const m = /pts_time:([0-9.]+)/.exec(line);
-        if (m) times.push(Math.round(fromMs + Number(m[1]) * 1000));
-      }
-    });
-    child.on('error', () => { clearTimeout(timer); resolve([]); });
-    child.on('close', () => { clearTimeout(timer); resolve(times); });
-    });
-  })();
+      let tail = '';
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve(times);
+      };
+      const child = spawnMediaProcess(ffmpegBin(), [
+        '-nostdin', '-hide_banner', ...ffmpegThreadArgs(),
+        ...attempt.inputArgs,
+        '-ss', String(Math.max(0, fromMs) / 1000),
+        '-t', String(Math.max(0, toMs - fromMs) / 1000),
+        '-i', input,
+        '-an', '-sn',
+        '-vf', `scale=160:-2,fps=2,select='gt(scene,${SCENE_THRESHOLD})',showinfo`,
+        '-f', 'null', '-',
+      ], { stdio: ['ignore', 'ignore', 'pipe'] });
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        finish();
+      }, SCENE_ANALYSIS_TIMEOUT_MS);
+      child.stderr?.on('data', (chunk: Buffer) => {
+        // Streaming analysis of pts_time avoids storing the entire showinfo in memory
+        tail += String(chunk);
+        const lines = tail.split('\n');
+        tail = lines.pop() ?? '';
+        for (const line of lines) {
+          const match = /pts_time:([0-9.]+)/.exec(line);
+          if (match) times.push(Math.round(fromMs + Number(match[1]) * 1000));
+        }
+      });
+      child.once('error', (error) => finish(error));
+      child.once('close', (code) => finish(code === 0 ? undefined : new Error(`scene scan exited ${code}`)));
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -188,16 +183,18 @@ export function frameSeekArgs(timeMs: number): string[] {
   return seconds > 0 ? ['-ss', String(seconds)] : [];
 }
 
-async function extractOneFrame(input: string, timeMs: number, outPath: string): Promise<void> {
-  await run(ffmpegBin(), [
+async function extractOneFrame(input: string, codec: string, timeMs: number, outPath: string): Promise<void> {
+  const attempts = await resolveRuntimeVideoDecodeAttempts(codec);
+  await runVideoDecodeFallback(attempts, (attempt) => run(ffmpegBin(), [
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
-    ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)),
+    ...attempt.inputArgs,
     ...frameSeekArgs(timeMs),
     '-i', input,
     '-frames:v', '1',
     '-q:v', '4',
     outPath,
-  ], FFMPEG_TIMEOUT_MS);
+  ], FFMPEG_TIMEOUT_MS),
+  { cleanup: () => unlink(outPath).catch(() => undefined) });
 }
 
 export function extractFramesPlugin(): Plugin {
@@ -231,6 +228,10 @@ export function extractFramesPlugin(): Plugin {
             return;
           }
 
+          const sourceProbe = await probeVideoInfo(inputPath, {
+            errorLabel: 'frame source',
+            allowMissingDuration: true,
+          });
           let times: number[];
           if (Array.isArray(body.sourceTimesMs) && body.sourceTimesMs.length) {
             times = body.sourceTimesMs
@@ -238,14 +239,15 @@ export function extractFramesPlugin(): Plugin {
               .filter((t) => Number.isFinite(t) && t >= 0)
               .slice(0, MAX_SAMPLES);
           } else {
-            const durationMs = await probeDurationMs(inputPath);
+            const durationMs = Math.round(sourceProbe.durationSeconds * 1000);
+            if (durationMs <= 0) throw new Error('ffprobe duration failed');
             const fromMs = typeof body.fromMs === 'number' && body.fromMs >= 0 ? body.fromMs : 0;
             const toMs = typeof body.toMs === 'number' && body.toMs > fromMs
               ? Math.min(body.toMs, durationMs)
               : durationMs;
             const count = typeof body.count === 'number' ? body.count : DEFAULT_SAMPLES;
             // Changes are given priority (the fixed camera position will not return N pictures of the same image); analysis failure automatically returns to uniform sampling
-            const scenes = await sceneChangeTimesMs(inputPath, fromMs, toMs);
+            const scenes = await sceneChangeTimesMs(inputPath, sourceProbe.video.codec, fromMs, toMs);
             times = scenes.length
               ? pickDistinctTimes(scenes, fromMs, toMs, count)
               : sampleTimesMs(fromMs, toMs, count);
@@ -260,7 +262,7 @@ export function extractFramesPlugin(): Plugin {
             const t = times[i]!;
             const framePath = join(work, `f-${i}.jpg`);
             try {
-              await extractOneFrame(inputPath, t, framePath);
+              await extractOneFrame(inputPath, sourceProbe.video.codec, t, framePath);
               cells.push({
                 jpeg: await readFile(framePath),
                 label: formatTimeLabel(t),

@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 
-import { ffmpegBin, ffprobeBin } from './media-binaries.ts';
+import { ffmpegCandidates, runFfmpegFallback, runFfprobeFallback } from './media-binaries.ts';
 import {
   h264EncodingArgs,
   h264FilterChain,
@@ -14,7 +15,8 @@ import {
   resolveMediaPerformanceProfile,
   type MediaPerformanceProfile,
 } from './media-performance-profile.ts';
-import { ffmpegThreadArgs, spawnMediaProcess } from './media-process.ts';
+import { mediaProcessArgs, spawnMediaProcess, type MediaToolKind } from './media-process.ts';
+import { thirdPartyDecoderFallbacks } from './media-decoder-fallback.ts';
 
 const PROBE_TIMEOUT_MS = 60_000;
 const MIN_PROXY_TIMEOUT_MS = 30 * 60_000;
@@ -24,7 +26,9 @@ const LONG_GOP_SECONDS = 4;
 const FAILED_RETRY_MS = 5 * 60_000;
 const MAX_CAPTURE_CHARS = 128 * 1024;
 const DIRECT_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1']);
+const DIRECT_PREVIEW_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm']);
 const CACHE_KEY = /^[a-z0-9_-]{1,128}$/;
+const PREVIEW_PRESSURE_LEVELS = [1, 2, 4, 8, 16, 32, 64, 128] as const;
 
 export interface PreviewSourceProbe {
   durationMs: number;
@@ -32,6 +36,13 @@ export interface PreviewSourceProbe {
   height: number;
   fps: number;
   codec: string;
+  container: string;
+  extension: string;
+  profile: string;
+  pixelFormat: string;
+  bitDepth: number;
+  hasAlpha: boolean;
+  bitrate: number;
   longGop: boolean;
   unstableCodec: boolean;
 }
@@ -41,7 +52,7 @@ export interface PreviewProcessOutput { stdout: string; stderr: string }
 export interface PreviewProxyBuildOutcome {
   readonly attempt: PreviewProxyBuildAttempt['id'];
   readonly encoder: H264EncoderProfile;
-  readonly decoder: MediaPerformanceProfile['ffmpeg']['decoder']['id'];
+  readonly decoder: string;
   readonly zeroCopy: boolean;
   readonly width: number;
   readonly height: number;
@@ -50,14 +61,68 @@ export interface PreviewProxyBuildOutcome {
 }
 
 export interface PreviewProxyBuildAttempt {
-  readonly id: 'nvidia-zero-copy' | 'hardware-decode-encode' | 'hardware-encode' | 'software';
+  readonly id:
+    | 'nvidia-zero-copy'
+    | 'hardware-decode-encode'
+    | 'hardware-encode'
+    | 'third-party-decode-hardware-encode'
+    | 'software'
+    | 'third-party-software';
   readonly args: readonly string[];
   readonly encoder: H264EncoderProfile;
-  readonly decoder: MediaPerformanceProfile['ffmpeg']['decoder']['id'];
+  readonly decoder: string;
   readonly zeroCopy: boolean;
   readonly width: number;
   readonly height: number;
   readonly fps: number;
+}
+
+export function normalizePreviewPressure(value: unknown): number {
+  const requested = Math.max(1, Math.min(128, Math.ceil(Number(value) || 1)));
+  return PREVIEW_PRESSURE_LEVELS.find((level) => level >= requested) ?? 128;
+}
+
+/**
+ * Reduce each proxy's decoded-pixel footprint when many video layers overlap.
+ * Export still reads masters; this only changes the profile-specific preview
+ * derivative. A 360p floor keeps text and framing readable on dense timelines.
+ */
+export function resolvePressureAdjustedProfile(
+  profile: MediaPerformanceProfile,
+  rawPressure: unknown,
+): MediaPerformanceProfile {
+  const pressure = normalizePreviewPressure(rawPressure);
+  const decoderBudget = profile.budgets.previewDecoderBudget;
+  if (pressure <= decoderBudget) return profile;
+  const scale = Math.min(1, Math.sqrt(decoderBudget / pressure));
+  const minHeight = Math.min(360, profile.proxy.maxHeight);
+  const maxHeight = Math.max(minHeight, Math.floor(profile.proxy.maxHeight * scale / 2) * 2);
+  const maxWidth = Math.max(2, Math.floor(maxHeight * profile.proxy.maxWidth / profile.proxy.maxHeight / 2) * 2);
+  const maxFps = pressure >= decoderBudget * 4
+    ? Math.min(15, profile.proxy.maxFps)
+    : pressure >= decoderBudget * 2
+      ? Math.min(24, profile.proxy.maxFps)
+      : profile.proxy.maxFps;
+  const pixelRatio = (maxWidth * maxHeight) / (profile.proxy.maxWidth * profile.proxy.maxHeight);
+  const fpsRatio = maxFps / profile.proxy.maxFps;
+  const videoBitrate = Math.max(
+    750_000,
+    Math.round(profile.proxy.videoBitrate * Math.max(0.18, pixelRatio * fpsRatio) / 50_000) * 50_000,
+  );
+  const proxy = {
+    ...profile.proxy,
+    maxWidth,
+    maxHeight,
+    maxFps,
+    videoBitrate,
+    audioBitrate: pressure >= 8 ? Math.min(96_000, profile.proxy.audioBitrate) : profile.proxy.audioBitrate,
+  };
+  return {
+    ...profile,
+    reason: `${profile.reason} 当前时间线约 ${pressure} 路视频并发，预览代理降至 ${maxHeight}p。`,
+    proxy,
+    cacheKey: `${profile.cacheKey}-p${pressure}-${maxHeight}p${maxFps}`,
+  };
 }
 
 function abortError(): Error {
@@ -76,9 +141,10 @@ export function runPreviewProcess(
   args: readonly string[],
   signal: AbortSignal,
   timeoutMs: number,
+  kind: MediaToolKind = 'ffmpeg',
 ): Promise<PreviewProcessOutput> {
   return new Promise((resolve, reject) => {
-    const child = spawnMediaProcess(command, [...ffmpegThreadArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawnMediaProcess(command, mediaProcessArgs(kind, args), { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -93,13 +159,15 @@ export function runPreviewProcess(
       signal.removeEventListener('abort', abort);
       reject(error);
     });
-    child.on('close', (code) => {
+    child.on('close', (code, childSignal) => {
       clearTimeout(timer);
       signal.removeEventListener('abort', abort);
       if (signal.aborted) reject(abortError());
       else if (timedOut) reject(new Error(`${command} timed out`));
       else if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(`${command} exit ${code}: ${stderr.slice(-500)}`));
+      else reject(new Error(
+        `${command} exit ${code ?? `signal ${childSignal ?? 'unknown'}`}: ${stderr.slice(-500)}`,
+      ));
     });
   });
 }
@@ -111,6 +179,19 @@ function parseRate(value: unknown): number {
   const denominator = Number(match[2] ?? 1);
   const rate = denominator > 0 ? numerator / denominator : 0;
   return Number.isFinite(rate) && rate > 0 && rate <= 240 ? rate : 0;
+}
+
+export function previewPixelFormatBitDepth(pixelFormat: string, rawBits?: string): number {
+  const explicit = Number(rawBits);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const normalized = pixelFormat.trim().toLowerCase();
+  const match = /(9|10|12|14|16)(?=(?:le|be)?$)/.exec(normalized);
+  return match ? Number(match[1]) : 8;
+}
+
+export function previewPixelFormatHasAlpha(pixelFormat: string): boolean {
+  const normalized = pixelFormat.trim().toLowerCase();
+  return /^(?:yuva|gbrap|rgba|bgra|argb|abgr|ayuv|ya\d|pal8$)/.test(normalized);
 }
 
 function parseLongGop(frames: Array<{ best_effort_timestamp_time?: string }> | undefined, durationMs: number): boolean {
@@ -131,33 +212,70 @@ function parseLongGop(frames: Array<{ best_effort_timestamp_time?: string }> | u
 }
 
 export async function probePreviewSource(file: string, signal: AbortSignal): Promise<PreviewSourceProbe> {
-  const { stdout } = await runPreviewProcess(ffprobeBin(), [
-    '-v', 'error', '-select_streams', 'v:0', '-skip_frame', 'nokey',
-    '-read_intervals', `%+${GOP_SAMPLE_SECONDS}`, '-show_frames', '-show_streams', '-show_format',
-    '-show_entries', 'format=duration:stream=codec_name,width,height,avg_frame_rate,r_frame_rate:frame=best_effort_timestamp_time',
+  const probeArgs = [
+    '-v', 'error', '-select_streams', 'v:0', '-show_streams', '-show_format',
+    '-show_entries', 'format=duration,bit_rate,format_name:stream=codec_name,profile,pix_fmt,bits_per_raw_sample,width,height,avg_frame_rate,r_frame_rate,bit_rate:stream_tags=alpha_mode',
     '-of', 'json', file,
-  ], signal, PROBE_TIMEOUT_MS);
+  ];
+  const selectedProbe = await runFfprobeFallback((command) => (
+    runPreviewProcess(command, probeArgs, signal, PROBE_TIMEOUT_MS, 'ffprobe')
+  ));
+  const ffprobe = selectedProbe.command;
+  const { stdout } = selectedProbe.value;
   const parsed = JSON.parse(stdout) as {
-    format?: { duration?: string };
+    format?: { duration?: string; bit_rate?: string; format_name?: string };
     streams?: Array<{
       codec_name?: string;
+      profile?: string;
+      pix_fmt?: string;
+      bits_per_raw_sample?: string;
       width?: number;
       height?: number;
       avg_frame_rate?: string;
       r_frame_rate?: string;
+      bit_rate?: string;
+      tags?: { alpha_mode?: string };
     }>;
-    frames?: Array<{ best_effort_timestamp_time?: string }>;
   };
   const stream = parsed.streams?.[0];
   const durationMs = Math.max(0, Math.round(Number(parsed.format?.duration ?? 0) * 1000));
   const codec = stream?.codec_name?.toLowerCase() ?? '';
+  const pixelFormat = stream?.pix_fmt?.toLowerCase() ?? '';
+  const bitDepth = previewPixelFormatBitDepth(pixelFormat, stream?.bits_per_raw_sample);
+  const bitrate = Math.max(0, Math.round(Number(stream?.bit_rate ?? parsed.format?.bit_rate ?? 0)) || 0);
+  let keyframes: Array<{ best_effort_timestamp_time?: string }> | undefined;
+  if (durationMs > LONG_GOP_SECONDS * 2000) {
+    try {
+      const sample = await runPreviewProcess(ffprobe, [
+        '-v', 'error', '-select_streams', 'v:0', '-skip_frame', 'nokey',
+        '-read_intervals', `%+${GOP_SAMPLE_SECONDS}`, '-show_frames',
+        '-show_entries', 'frame=best_effort_timestamp_time', '-of', 'json', file,
+      ], signal, PROBE_TIMEOUT_MS, 'ffprobe');
+      keyframes = (JSON.parse(sample.stdout) as {
+        frames?: Array<{ best_effort_timestamp_time?: string }>;
+      }).frames;
+    } catch (error) {
+      if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
+      // Stream metadata is still valid. Missing keyframe evidence is treated as
+      // long-GOP below, which safely selects a compatibility proxy instead of
+      // failing import when an older platform ffprobe crashes on frame scans.
+      keyframes = undefined;
+    }
+  }
   return {
     durationMs,
     width: stream?.width ?? 0,
     height: stream?.height ?? 0,
     fps: parseRate(stream?.avg_frame_rate) || parseRate(stream?.r_frame_rate),
     codec,
-    longGop: parseLongGop(parsed.frames, durationMs),
+    container: parsed.format?.format_name ?? '',
+    extension: extname(file).toLowerCase(),
+    profile: stream?.profile ?? '',
+    pixelFormat,
+    bitDepth,
+    hasAlpha: stream?.tags?.alpha_mode === '1' || previewPixelFormatHasAlpha(pixelFormat),
+    bitrate,
+    longGop: parseLongGop(keyframes, durationMs),
     unstableCodec: !DIRECT_CODECS.has(codec),
   };
 }
@@ -168,9 +286,23 @@ export function previewProxyReason(
   profile: MediaPerformanceProfile,
 ): string | null {
   if (force) return 'direct-preview-failed';
+  if (!DIRECT_PREVIEW_EXTENSIONS.has(probe.extension)) return 'portable-container-proxy';
   if (probe.width > profile.proxy.maxWidth || probe.height > profile.proxy.maxHeight) return 'adaptive-resolution';
   if (probe.fps > profile.proxy.maxFps + 0.01) return 'high-frame-rate';
+  if (probe.bitrate > Math.max(6_000_000, profile.proxy.videoBitrate * 3)) return 'high-bitrate';
   if (probe.longGop) return 'long-gop';
+  if (probe.codec === 'av1') return 'portable-av1-decoder';
+  if (probe.codec === 'h264') {
+    const riskyProfile = /(?:high\s*10|high\s*4:2:2|high\s*4:4:4)/i.test(probe.profile);
+    const riskyPixelFormat = !!probe.pixelFormat
+      && !['yuv420p', 'yuvj420p', 'nv12'].includes(probe.pixelFormat);
+    if (probe.bitDepth > 8 || riskyProfile || riskyPixelFormat) return 'browser-h264-profile';
+  }
+  if (probe.codec === 'vp9' && !probe.hasAlpha) {
+    const riskyPixelFormat = !!probe.pixelFormat
+      && !['yuv420p', 'yuvj420p'].includes(probe.pixelFormat);
+    if (probe.bitDepth > 8 || riskyPixelFormat) return 'browser-vp9-profile';
+  }
   if (probe.unstableCodec) return 'unstable-codec';
   return null;
 }
@@ -229,6 +361,7 @@ function attemptArgs({
   file,
   output,
   inputAcceleration,
+  inputDecoder,
   filter,
   encoder,
   profile,
@@ -238,6 +371,7 @@ function attemptArgs({
   file: string;
   output: string;
   inputAcceleration: readonly string[];
+  inputDecoder?: string;
   filter: string;
   encoder: H264EncoderProfile;
   profile: MediaPerformanceProfile;
@@ -247,7 +381,7 @@ function attemptArgs({
   return [
     '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
     ...h264GlobalArgs(encoder.id),
-    ...inputAcceleration, '-i', file,
+    ...inputAcceleration, ...(inputDecoder ? ['-c:v', inputDecoder] : []), '-i', file,
     '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn', '-map_metadata', '-1',
     '-vf', filter,
     ...outputArgs(encoder, profile, fps, zeroCopy),
@@ -268,6 +402,10 @@ export function previewProxyBuildAttempts(
     id: 'libx264', label: 'Software (libx264)', hardware: false, transport: 'server',
   };
   const cpuFilter = `scale=${width}:${height}:flags=fast_bilinear`;
+  const thirdPartyDecoders = thirdPartyDecoderFallbacks(
+    probe.codec,
+    profile.ffmpeg.thirdPartyDecoders,
+  );
   const attempts: PreviewProxyBuildAttempt[] = [];
   if (encoder.id === 'h264_nvenc' && profile.ffmpeg.decoder.zeroCopy) {
     attempts.push({
@@ -298,6 +436,16 @@ export function previewProxyBuildAttempts(
         filter: h264FilterChain(encoder.id, [cpuFilter]),
       }),
     });
+    for (const decoder of thirdPartyDecoders) {
+      attempts.push({
+        id: 'third-party-decode-hardware-encode', encoder, decoder,
+        zeroCopy: false, width, height, fps,
+        args: attemptArgs({
+          file, output, profile, encoder, fps, inputAcceleration: [], inputDecoder: decoder,
+          filter: h264FilterChain(encoder.id, [cpuFilter]),
+        }),
+      });
+    }
   }
   attempts.push({
     id: 'software', encoder: software, decoder: 'software', zeroCopy: false, width, height, fps,
@@ -305,6 +453,16 @@ export function previewProxyBuildAttempts(
       file, output, profile, encoder: software, fps, inputAcceleration: [], filter: cpuFilter,
     }),
   });
+  for (const decoder of thirdPartyDecoders) {
+    attempts.push({
+      id: 'third-party-software', encoder: software, decoder,
+      zeroCopy: false, width, height, fps,
+      args: attemptArgs({
+        file, output, profile, encoder: software, fps, inputAcceleration: [], inputDecoder: decoder,
+        filter: cpuFilter,
+      }),
+    });
+  }
   return attempts;
 }
 
@@ -326,12 +484,12 @@ export async function buildPreviewProxy(
   for (const attempt of attempts) {
     try {
       await unlink(output).catch(() => {});
-      await runPreviewProcess(
-        ffmpegBin(),
+      await runFfmpegFallback((command) => runPreviewProcess(
+        command,
         attempt.args,
         signal,
         previewProxyTimeoutMs(probe.durationMs, attempt.encoder.hardware),
-      );
+      ));
       return {
         attempt: attempt.id,
         encoder: attempt.encoder,
@@ -345,7 +503,7 @@ export async function buildPreviewProxy(
     } catch (error) {
       if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
       lastError = error;
-      fallbackReasons.push(`${attempt.id}: unavailable`);
+      fallbackReasons.push(`${attempt.id}:${attempt.decoder}: unavailable`);
     }
   }
   throw lastError instanceof Error ? lastError : new Error('preview proxy generation failed');
@@ -392,6 +550,13 @@ function sourcePayload(src: string, probe: PreviewSourceProbe): PreviewProxyPayl
     height: probe.height,
     fps: probe.fps,
     codec: probe.codec,
+    container: probe.container,
+    extension: probe.extension,
+    profile: probe.profile,
+    pixelFormat: probe.pixelFormat,
+    bitDepth: probe.bitDepth,
+    hasAlpha: probe.hasAlpha,
+    bitrate: probe.bitrate,
     longGop: probe.longGop,
   };
 }
@@ -431,10 +596,13 @@ async function readBuildOutcome(path: string): Promise<PreviewProxyBuildOutcome 
 
 function publicProxyError(error: unknown, sourcePath: string, outputPath: string): string {
   const raw = error instanceof Error ? error.message : String(error);
-  return raw
+  const sanitized = ffmpegCandidates().reduce(
+    (message, command) => command === 'ffmpeg' ? message : message.replaceAll(command, '<ffmpeg>'),
+    raw,
+  );
+  return sanitized
     .replaceAll(sourcePath, '<source>')
     .replaceAll(outputPath, '<proxy>')
-    .replaceAll(ffmpegBin(), '<ffmpeg>')
     .slice(-1_000);
 }
 
@@ -508,7 +676,8 @@ export async function handlePreviewProxy(
     const url = new URL(req.url ?? '/', 'http://localhost');
     const src = url.searchParams.get('src') ?? '';
     const force = url.searchParams.get('force') === '1';
-    const profile = await resolveMediaPerformanceProfile();
+    const pressure = normalizePreviewPressure(url.searchParams.get('pressure'));
+    const profile = resolvePressureAdjustedProfile(await resolveMediaPerformanceProfile(), pressure);
     const kind = `proxy-${profile.cacheKey}`;
     const proxyPath = deps.cachePath(hit.name, hit.source, kind, 'mp4');
     const metaPath = deps.cachePath(hit.name, hit.source, `${kind}-meta`, 'json');

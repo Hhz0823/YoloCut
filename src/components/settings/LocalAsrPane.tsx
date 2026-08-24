@@ -2,15 +2,13 @@
 // Models are NOT bundled — users pick and download them on demand through the
 // local hf-proxy (multi-source accelerated download into the disk cache).
 // Whisper is OpenAI's open-source model, so the official OpenAI mark is used.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { theme } from '../../theme';
 import { useT } from '../../i18n/locale';
 import { warmUpLocalAsr } from '../../transcript/local-asr';
 import { asrBackendPreference } from '../../transcript/deviceProfile';
 import { VendorIcon } from './vendorIcons';
 import type { AsrDownloadStatus } from '../../../shared/asr-models';
-import { FieldRow, type FieldCtx } from './settingsVendorPane';
-import type { SettingsField } from './settingsSchema';
 import { mutateLocalAsrModel } from './local-asr-model-mutation';
 import {
   desktopNativeInferenceEnabled,
@@ -43,7 +41,7 @@ function modelSizeText(bytes: number): string {
   return mb >= 1024 ? ` · ${(mb / 1024).toFixed(1)}GB` : ` · ${Math.round(mb)}MB`;
 }
 
-export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]; ctx: FieldCtx }) {
+export function LocalAsrPane({ settingsFields }: { settingsFields: ReactNode }) {
   const t = useT();
   const [models, setModels] = useState<AsrModelState[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -165,7 +163,7 @@ export function LocalAsrPane({ fields, ctx }: { fields: readonly SettingsField[]
         <VendorIcon vendor="openai" size={16} />
         <span style={{ fontSize: 12, fontWeight: 600 }}>{t('默认模型')}</span>
       </div>
-      {fields.map((field) => <FieldRow key={field.name} field={field} ctx={ctx} />)}
+      {settingsFields}
       {hasDesktopInference && desktopInferenceSupported && (
         <label style={{
           display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px',

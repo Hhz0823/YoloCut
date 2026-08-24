@@ -12,7 +12,7 @@
 6. Use readback and preview tools to validate IDs, tracks, timing, captions,
    media availability, and export prerequisites.
 7. Call `review_edit_session` once the complete draft is ready.
-8. Poll `get_edit_session`. `pending_review`, `draft`, `failed`, `cancelled`, or
+8. Poll `get_edit_session`. `awaiting_review`, `drafting`, `failed`, `cancelled`, or
    `stale` is not completion. Report success only for `applied`.
 
 Manual sessions require the user to approve the complete proposal in YoloCut.

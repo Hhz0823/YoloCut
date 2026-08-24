@@ -131,17 +131,26 @@ function TimelineContent({ state, project, transparent, browserRenderer = false,
   if (state.fxDefs) {
     for (const def of Object.values(state.fxDefs)) if (!(def.id in ALL_FX)) registerCustomFx(def);
   }
-  const isHidden = (t: TimelineItem['track']) => state.tracks?.[t]?.hidden ?? false;
+  const { items, trackOrder, tracks } = state;
   const isMuted = (t: TimelineItem['track']) => forceMuted || (state.tracks?.[t]?.muted ?? false);
-  const trackIds = timelineTrackIds(state);
-  const visualTracks = trackIds.filter((id) => trackKind(state, id) === 'video');
-  // hidden track = fully disabled (no picture, no sound)
-  const visual = state.items.filter((it) => isVisualItemKind(it.kind) && visualTracks.includes(it.track) && !isHidden(it.track));
-  // Paint visual bottom-to-top. Timeline rows are stored top-to-bottom.
-  const ordered = [...visual].sort((a, b) => a.track === b.track
-    ? a.startFrame - b.startFrame
-    : visualTracks.indexOf(b.track) - visualTracks.indexOf(a.track));
-  const audio = state.items.filter((it) => it.kind === 'audio' && it.src && !isHidden(it.track));
+  const renderIndex = useMemo(() => {
+    const trackState = { items, trackOrder, tracks };
+    const trackIds = timelineTrackIds(trackState);
+    const visualTracks = trackIds.filter((id) => trackKind({ tracks }, id) === 'video');
+    const visualTrackSet = new Set(visualTracks);
+    const visualTrackRank = new Map(visualTracks.map((id, index) => [id, index]));
+    // hidden track = fully disabled (no picture, no sound)
+    const visual = items.filter((item) => isVisualItemKind(item.kind)
+      && visualTrackSet.has(item.track) && !(tracks?.[item.track]?.hidden ?? false));
+    // Paint visual bottom-to-top. Timeline rows are stored top-to-bottom.
+    const ordered = [...visual].sort((left, right) => left.track === right.track
+      ? left.startFrame - right.startFrame
+      : (visualTrackRank.get(right.track) ?? 0) - (visualTrackRank.get(left.track) ?? 0));
+    const audio = items.filter((item) => item.kind === 'audio' && item.src
+      && !(tracks?.[item.track]?.hidden ?? false));
+    return { ordered, audio, byId: new Map(items.map((item) => [item.id, item])) };
+  }, [items, trackOrder, tracks]);
+  const { ordered, audio, byId } = renderIndex;
   const captionEntries = captionTrackEntries(state);
   const anchorRanges = useMemo(() => mergeFrameRanges(state.items
     .filter((item) => state.tracks?.[item.track]?.role === 'anchor'
@@ -163,17 +172,28 @@ function TimelineContent({ state, project, transparent, browserRenderer = false,
   const premountFrames = environment.isRendering
     ? 0
     : Math.max(0, Math.round(previewPremountFrames ?? state.fps));
-  const videoAudioGroups = continuousVideoAudioGroups(ordered, state.transitions);
-  const groupedVideoIds = new Set(videoAudioGroups.flatMap((group) => group.map((item) => item.id)));
+  const videoAudioGroups = useMemo(
+    () => continuousVideoAudioGroups(ordered, state.transitions),
+    [ordered, state.transitions],
+  );
+  const groupedVideoIds = useMemo(
+    () => new Set(videoAudioGroups.flatMap((group) => group.map((item) => item.id))),
+    [videoAudioGroups],
+  );
 
   // In the Player, only the transition into the selected clip pays the dual
   // decoder + WebGL cost. It uses the same GlTransition component as export.
   // Other transitions keep the existing CSS approximation. Non-texturable
   // sources and missing custom shaders are explicit fallback states.
-  const byId = new Map(state.items.map((it) => [it.id, it]));
   const texturable = (it?: TimelineItem) => !!it && isRasterMediaKind(it.kind) && it.kind !== 'svg' && it.kind !== 'gif';
-  const enabledTransitions = (state.transitions ?? []).filter((t) => t.enabled !== false);
-  const visualTransitions = enabledTransitions.filter((t) => !isAudioTransition(t.type));
+  const enabledTransitions = useMemo(
+    () => (state.transitions ?? []).filter((transition) => transition.enabled !== false),
+    [state.transitions],
+  );
+  const visualTransitions = useMemo(
+    () => enabledTransitions.filter((transition) => !isAudioTransition(transition.type)),
+    [enabledTransitions],
+  );
   type PreviewEdge = { type: CssTransitionType; frames: number; dir: TransitionDirection; line?: boolean; isolated: boolean };
   const entranceOf = new Map<string, PreviewEdge>();
   const extendBefore = new Map<string, number>();

@@ -36,4 +36,22 @@ await flush();
 assert.equal(starts.filter((value) => value === 'deduped').length, 1);
 assert.equal(starts.includes('stale'), false, 'a queued source is updated instead of duplicated');
 
+const adaptive = new PreviewProxyScheduler(1);
+const first = deferred();
+const second = deferred();
+const adaptiveStarts: string[] = [];
+adaptive.enqueue('first', 0, async () => { adaptiveStarts.push('first'); await first.promise; });
+adaptive.enqueue('second', 1, async () => { adaptiveStarts.push('second'); await second.promise; });
+await flush();
+assert.deepEqual(adaptiveStarts, ['first']);
+adaptive.setConcurrency(2);
+await flush();
+assert.deepEqual(adaptiveStarts, ['first', 'second'], 'performance profile can fill a second hardware proxy pipeline');
+assert.deepEqual(adaptive.stats(), { queued: 0, running: 2, concurrency: 2 });
+adaptive.setConcurrency(1);
+assert.equal(adaptive.stats().running, 2, 'reducing the limit never aborts already-running work');
+first.resolve();
+second.resolve();
+await flush();
+
 console.log('previewProxyScheduler.verify: ok');

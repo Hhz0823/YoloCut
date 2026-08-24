@@ -2,6 +2,7 @@ import { copyFile, mkdir, realpath, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Stats } from 'node:fs';
 import type { DirectoryImportedFile, DirectoryImportMediaKind } from '../shared/directory-import.ts';
+import { VIDEO_FILE_EXTENSIONS } from '../shared/media-file-extensions.ts';
 import { normalizeSha256Hash } from '../shared/content-hash.ts';
 import { sha256File } from '../shared/node-content-hash.ts';
 import { ffprobeBin } from '../server/media-binaries.ts';
@@ -17,7 +18,7 @@ import {
 } from './local-media-import.ts';
 
 const KIND_BY_EXTENSION: Record<string, DirectoryImportMediaKind> = {
-  '.mp4': 'video', '.m4v': 'video', '.mov': 'video', '.webm': 'video',
+  ...Object.fromEntries(VIDEO_FILE_EXTENSIONS.map((extension) => [extension, 'video' as const])),
   '.jpg': 'image', '.jpeg': 'image', '.png': 'image', '.webp': 'image',
   '.avif': 'image', '.heic': 'image', '.heif': 'image',
   '.mp3': 'audio', '.wav': 'audio', '.m4a': 'audio', '.aac': 'audio',

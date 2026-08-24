@@ -20,8 +20,8 @@ import {
 
 assert.equal(PRODUCT_NAME, 'YoloCut');
 assert.equal(PRODUCT_SLUG, 'yolocut');
-assert.equal(PRODUCT_VERSION, '0.0.1');
-assert.equal(PRODUCT_DISPLAY_VERSION, 'v0.0.1');
+assert.equal(PRODUCT_VERSION, '0.0.2');
+assert.equal(PRODUCT_DISPLAY_VERSION, 'v0.0.2');
 assert.equal(PRODUCT_MACHINE_STATE_DIR_ENV, 'YOLOCUT_MACHINE_STATE_DIR');
 assert.equal(PRODUCT.repository.url, 'https://github.com/Hhz0823/YoloCut');
 assert.equal(MCP_PROTOCOL_SERVER_NAME, 'yolocut');

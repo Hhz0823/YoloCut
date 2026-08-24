@@ -2,13 +2,14 @@ import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
-import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 
 import { ffmpegBin } from '../media-binaries.ts';
-import { resolveHwDecodeArgs } from '../media-acceleration.ts';
+import { runVideoDecodeFallback } from '../media-decoder-fallback.ts';
+import { probeVideoInfo } from '../media-probe.ts';
+import { resolveRuntimeVideoDecodeAttempts } from '../media-runtime-decode.ts';
 import { ffmpegThreadArgs, spawnMediaProcess } from '../media-process.ts';
 import { isSafeUploadName, mimeFor, resolveUploadFile, uploadDir } from '../media-dir.ts';
 import type { VideoRequest } from './video-validation.ts';
@@ -144,28 +145,28 @@ async function timelineSlicePath(reference: ServerGenerationReference): Promise<
     const output = join(directory, filename);
     const sourceStartSeconds = srcInFrame / fps;
     const sourceDurationSeconds = (srcOutFrame - srcInFrame) / fps;
-    const common = [
+    const inputWindow = [
       '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
       '-ss', String(sourceStartSeconds),
       '-t', String(sourceDurationSeconds),
-      ...(await resolveHwDecodeArgs(ffmpegBin(), undefined)),
-      '-i', source.file,
     ];
     if (mediaKind === 'audio') {
       await runSliceFfmpeg([
-        ...common,
+        ...inputWindow, '-i', source.file,
         '-vn', '-af', atempoFilters(playbackRate),
         '-c:a', 'aac', '-b:a', '192k',
         output,
       ]);
     } else {
-      await runSliceFfmpeg([
-        ...common,
+      const attempts = await resolveRuntimeVideoDecodeAttempts();
+      await runVideoDecodeFallback(attempts, (attempt) => runSliceFfmpeg([
+        ...inputWindow, ...attempt.inputArgs, '-i', source.file,
         '-an', '-vf', `setpts=PTS/${playbackRate}`,
         '-c:v', 'libx264', ...ffmpegThreadArgs(), '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p',
         '-movflags', '+faststart',
         output,
-      ]);
+      ]),
+      { cleanup: () => rm(output, { force: true }).catch(() => undefined) });
     }
     return `/media/uploads/${filename}`;
   })();
@@ -255,22 +256,12 @@ export async function providerMediaUrl(path: string): Promise<string> {
 }
 
 async function probeVideo(file: string): Promise<{ durationSeconds: number; width?: number; height?: number }> {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height:format=duration', '-of', 'json', file]);
-    let output = '';
-    child.stdout.on('data', (data) => { output += String(data); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      try {
-        const parsed = JSON.parse(output) as { streams?: Array<{ width?: number; height?: number }>; format?: { duration?: string } };
-        const durationSeconds = Number(parsed.format?.duration);
-        if (code !== 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new Error();
-        resolvePromise({ durationSeconds, width: parsed.streams?.[0]?.width, height: parsed.streams?.[0]?.height });
-      } catch {
-        reject(new Error('unable to probe generated video'));
-      }
-    });
-  });
+  const info = await probeVideoInfo(file, { errorLabel: 'generated video' });
+  return {
+    durationSeconds: info.durationSeconds,
+    width: info.video.width,
+    height: info.video.height,
+  };
 }
 
 async function streamResponseToFile(response: Response, file: string, emptyMessage: string): Promise<void> {
