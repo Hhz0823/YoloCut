@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   桌面启动现在优先显示轻量原生启动壳、并行启动内置服务、异步完成 GPU 探测，并将模型、缩略图、更新检查和渲染运行时准备延迟到首个渲染器就绪之后。
 - Dashboard dialogs and renderer surfaces now stay behind lazy module boundaries so the complete editor dependency graph is not part of the initial dashboard load.
   工程首页弹窗与渲染器页面现在保持在懒加载模块边界之后，完整编辑器依赖图不再进入工程首页首屏加载路径。
+- GitHub Releases now expose only directly installable Windows `.exe` and macOS `.dmg` files. Linux remains CI-tested without a public release attachment, installer hashes are written into the release notes, and packaged apps use the existing version check plus manual Release-page installation instead of publishing updater metadata.
+  GitHub Releases 现在只展示可直接安装的 Windows `.exe` 与 macOS `.dmg`。Linux 仍在 CI 中验证但不再作为公开附件；安装包哈希写入 Release 说明；安装版通过现有版本检查并跳转 Release 页面手动安装，不再发布自动更新元数据。
 
 ### Fixed / 修复
 

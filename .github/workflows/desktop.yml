@@ -1,6 +1,6 @@
 # Desktop release workflow. It only runs when manually dispatched.
-# Run it against a branch to build Actions artifacts, or against a v* tag to
-# publish a GitHub Release with installers and SHA-256 checksums.
+# Run it against a branch to build native Actions artifacts, or against a v* tag
+# to publish an installer-only GitHub Release (.exe and .dmg assets only).
 # GitHub automatically adds source archives to every release.
 name: desktop
 
@@ -54,8 +54,6 @@ jobs:
   package:
     name: Package ${{ matrix.name }}
     needs: validate
-    env:
-      YOLOCUT_RELEASE_REPOSITORY: ${{ github.repository }}
     strategy:
       fail-fast: false
       matrix:
@@ -65,31 +63,21 @@ jobs:
             script: desktop:dist
             artifact: |
               release/*.dmg
-              release/*.zip
-              release/latest-arm64-mac.yml
-              release/*.blockmap
           - name: macOS-x64
             os: macos-15-intel
             script: desktop:dist:mac-x64
             artifact: |
               release/*.dmg
-              release/*.zip
-              release/latest-x64-mac.yml
-              release/*.blockmap
           - name: Windows-x64
             os: windows-latest
             script: desktop:dist:win
             artifact: |
               release/*.exe
-              release/latest-x64.yml
-              release/*.blockmap
           - name: Linux-x64
             os: ubuntu-latest
             script: desktop:dist:linux
             artifact: |
               release/*.AppImage
-              release/latest-x64-linux.yml
-              release/*.blockmap
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -135,19 +123,17 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           dmgs=(release/*.dmg)
-          zips=(release/*.zip)
           [[ "${#dmgs[@]}" -eq 1 ]]
-          [[ "${#zips[@]}" -eq 1 ]]
 
           mount_dir="$(mktemp -d "$RUNNER_TEMP/yolocut-dmg.XXXXXX")"
-          zip_dir="$(mktemp -d "$RUNNER_TEMP/yolocut-zip.XXXXXX")"
+          app_dir="$(mktemp -d "$RUNNER_TEMP/yolocut-app.XXXXXX")"
           mounted=false
           cleanup() {
             if [[ "$mounted" == true ]]; then
               hdiutil detach "$mount_dir" || hdiutil detach -force "$mount_dir"
             fi
             rm -rf "$mount_dir"
-            rm -rf "$zip_dir"
+            rm -rf "$app_dir"
           }
           trap cleanup EXIT
 
@@ -155,28 +141,22 @@ jobs:
           mounted=true
           mounted_app="$mount_dir/YoloCut.app"
           test -x "$mounted_app/Contents/MacOS/YoloCut"
-          # The DMG and ZIP contain the same app; execute it from the writable ZIP below.
+          # Copy the mounted app to a writable temporary directory before executing it.
+          ditto "$mounted_app" "$app_dir/YoloCut.app"
           hdiutil detach "$mount_dir"
           mounted=false
 
-          unzip -tq "${zips[0]}"
-          test "$(unzip -Z1 "${zips[0]}" 'YoloCut.app/Contents/MacOS/YoloCut')" = \
-            'YoloCut.app/Contents/MacOS/YoloCut'
-          test "$(unzip -Z1 "${zips[0]}" \
-            'YoloCut.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework')" = \
-            'YoloCut.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework'
-          unzip -q "${zips[0]}" -d "$zip_dir"
-          zipped_app="$zip_dir/YoloCut.app"
-          test -x "$zipped_app/Contents/MacOS/YoloCut"
-          "$zipped_app/Contents/MacOS/YoloCut"
+          copied_app="$app_dir/YoloCut.app"
+          test -x "$copied_app/Contents/MacOS/YoloCut"
+          test -x "$copied_app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework"
+          "$copied_app/Contents/MacOS/YoloCut"
           case "$(uname -m)" in
             arm64) runtime_arch='mac-arm64' ;;
             x86_64) runtime_arch='mac-x64' ;;
             *) echo "Unsupported macOS architecture: $(uname -m)" >&2; exit 1 ;;
           esac
           render_runtime="YoloCut.app/Contents/Resources/chrome-headless-shell/$runtime_arch/chrome-headless-shell-$runtime_arch/chrome-headless-shell"
-          test "$(unzip -Z1 "${zips[0]}" "$render_runtime")" = "$render_runtime"
-          test -x "$zip_dir/$render_runtime"
+          test -x "$app_dir/$render_runtime"
 
       - name: Smoke test Windows installer
         if: runner.os == 'Windows'
@@ -188,8 +168,7 @@ jobs:
             throw "Expected one NSIS installer, found $($installers.Count)"
           }
           ./scripts/smoke-yolocut-installer.ps1 `
-            -Installer $installers[0].FullName `
-            -ExpectUpdateFeed
+            -Installer $installers[0].FullName
 
       - name: Smoke test Linux AppImage
         if: runner.os == 'Linux'
@@ -233,25 +212,32 @@ jobs:
           path: release-files
           merge-multiple: true
 
-      - name: Validate installers
+      - name: Stage installer-only release assets
         shell: bash
         run: |
           set -euo pipefail
           EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
-          test "$(find release-files -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' \) | wc -l | tr -d ' ')" = 4
-          test "$(find release-files -type f -name '*.zip' | wc -l | tr -d ' ')" = 2
-          test "$(find release-files -type f -name '*.yml' | wc -l | tr -d ' ')" = 4
-          test -f release-files/latest-arm64-mac.yml
-          test -f release-files/latest-x64-mac.yml
-          test -f release-files/latest-x64.yml
-          test -f release-files/latest-x64-linux.yml
-          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-arm64.zip.blockmap"
-          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-x64.zip.blockmap"
-          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-x64.exe.blockmap"
+          test "$(find release-files -type f | wc -l | tr -d ' ')" = 4
+          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-x64.exe"
+          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-arm64.dmg"
+          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-x64.dmg"
+          test -f "release-files/YoloCut-v${EXPECTED_VERSION}-x86_64.AppImage"
 
-      - name: Generate checksums
-        working-directory: release-files
-        run: sha256sum ./* > SHA256SUMS.txt
+          mkdir release-assets
+          cp "release-files/YoloCut-v${EXPECTED_VERSION}-x64.exe" release-assets/
+          cp "release-files/YoloCut-v${EXPECTED_VERSION}-arm64.dmg" release-assets/
+          cp "release-files/YoloCut-v${EXPECTED_VERSION}-x64.dmg" release-assets/
+          test "$(find release-assets -type f | wc -l | tr -d ' ')" = 3
+          test "$(find release-assets -type f ! \( -name '*.exe' -o -name '*.dmg' \) | wc -l | tr -d ' ')" = 0
+
+          checksum_file="$RUNNER_TEMP/installer-checksums.txt"
+          (cd release-assets && sha256sum ./*) | tee "$checksum_file"
+          {
+            echo '### Installer SHA-256'
+            echo '```text'
+            cat "$checksum_file"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create or reuse draft release
         shell: bash
@@ -286,6 +272,24 @@ jobs:
           done
           [[ "$release_ready" == "true" ]]
 
+      - name: Remove non-installer release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_id="$(gh api \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq '.id')"
+          while IFS=$'\t' read -r asset_id asset_name; do
+            case "$asset_name" in
+              *.exe|*.dmg) ;;
+              *) gh api --method DELETE \
+                   "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" ;;
+            esac
+          done < <(gh api \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id/assets" \
+            --paginate \
+            --jq '.[] | [.id, .name] | @tsv')
+
       - name: Upload and verify release assets
         shell: bash
         run: |
@@ -294,7 +298,7 @@ jobs:
 
           for attempt in {1..8}; do
             if gh release upload "$GITHUB_REF_NAME" \
-              release-files/* \
+              release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber; then
               uploaded=true
@@ -310,7 +314,7 @@ jobs:
           local_manifest="$RUNNER_TEMP/local-release-assets.tsv"
           remote_manifest="$RUNNER_TEMP/remote-release-assets.tsv"
           : > "$local_manifest"
-          for asset in release-files/*; do
+          for asset in release-assets/*; do
             digest="$(sha256sum "$asset" | cut -d ' ' -f1)"
             printf '%s\tsha256:%s\n' "${asset##*/}" "$digest" >> "$local_manifest"
           done
@@ -340,6 +344,37 @@ jobs:
             sleep $((attempt * 15))
           done
           [[ "$verified" == "true" ]]
+
+      - name: Put installer checksums in release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_notes="$RUNNER_TEMP/current-release-notes.md"
+          base_notes="$RUNNER_TEMP/base-release-notes.md"
+          next_notes="$RUNNER_TEMP/next-release-notes.md"
+          gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json body \
+            --jq '.body' > "$current_notes"
+          awk '
+            /<!-- yolocut-installer-checksums:start -->/ { skipping=1; next }
+            /<!-- yolocut-installer-checksums:end -->/ { skipping=0; next }
+            !skipping { print }
+          ' "$current_notes" > "$base_notes"
+          {
+            cat "$base_notes"
+            echo
+            echo '<!-- yolocut-installer-checksums:start -->'
+            echo '## Installer SHA-256'
+            echo
+            while read -r digest path; do
+              printf -- '- `%s` — `%s`\n' "${path#./}" "$digest"
+            done < "$RUNNER_TEMP/installer-checksums.txt"
+            echo '<!-- yolocut-installer-checksums:end -->'
+          } > "$next_notes"
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file "$next_notes"
 
       - name: Publish verified draft
         shell: bash

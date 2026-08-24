@@ -187,10 +187,10 @@ YoloCut `v0.0.2` 将桌面启动拆成多个阶段，不再让首个窗口等待
 | Windows x64 | [YoloCut-v0.0.2-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.exe) |
 | macOS Apple Silicon | [YoloCut-v0.0.2-arm64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-arm64.dmg) |
 | macOS Intel | [YoloCut-v0.0.2-x64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.dmg) |
-| Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
-| 校验文件 | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-表中安装包均由对应平台的 GitHub Actions 原生运行器构建并完成冒烟测试。Windows 安装包当前未签名；macOS 使用临时签名但尚未公证；Linux AppImage 也未签名。运行前请使用 Release 中提供的 SHA-256 校验安装包。
+GitHub Release 资产有意只保留可直接安装的 Windows `.exe` 与 macOS `.dmg`。安装包 SHA-256 会列在 Release 说明中，不再作为额外文件上传。Windows 安装包当前未签名；macOS 使用临时签名但尚未公证。
+
+Linux 版本仍会在 CI 中完成构建和冒烟测试，但不再附加到 GitHub Releases。Linux 用户可以按照下方步骤从源码运行。安装版会在程序内检查版本，发现更新后打开 GitHub Release 页面，由用户手动下载安装。
 
 ## 从源码运行
 

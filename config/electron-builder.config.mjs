@@ -60,21 +60,7 @@ const keepSqliteVec = TARGET_SQLITE_VEC_PACKAGE[target];
 const sqliteVecFilters = SQLITE_VEC_PACKAGES
   .filter((packageSuffix) => packageSuffix !== keepSqliteVec)
   .map((packageSuffix) => `!node_modules/sqlite-vec-${packageSuffix}/**`);
-const updateChannel = target.includes('arm64') ? 'latest-arm64' : 'latest-x64';
 const hasMacSigningCertificate = Boolean(process.env.CSC_LINK || process.env.CSC_NAME);
-const releaseRepository = (process.env.YOLOCUT_RELEASE_REPOSITORY ?? process.env.GITHUB_REPOSITORY ?? '').trim();
-const releaseRepositoryMatch = /^([^/\s]+)\/([^/\s]+)$/.exec(releaseRepository);
-if (releaseRepository && !releaseRepositoryMatch) {
-  throw new Error('YOLOCUT_RELEASE_REPOSITORY must use owner/repository format');
-}
-const publish = releaseRepositoryMatch
-  ? [{
-      provider: 'github',
-      owner: releaseRepositoryMatch[1],
-      repo: releaseRepositoryMatch[2],
-      channel: updateChannel,
-    }]
-  : [];
 
 export default {
   appId: 'dev.yolocut.desktop',
@@ -86,9 +72,12 @@ export default {
   // The app.asar content itself is handled by the `compression` setting; native binaries
   // (onnxruntime-node, ffmpeg-static, @remotion/compositor) remain unpacked per their filters.
   compression: 'maximum',
-  // A local/private build must not silently update itself from upstream
-  // YoloCut. CI or an official YoloCut build opts into its own repository.
-  publish,
+  // GitHub Releases intentionally expose installer files only (.exe/.dmg).
+  // electron-updater requires extra metadata/archives, so official builds use
+  // the existing in-app release check and open the release page for manual installation.
+  // `null` is intentional: electron-builder treats an empty array as permission
+  // to infer GitHub from package metadata and still writes app-update.yml.
+  publish: null,
   files: [
     'desktop-dist/main.mjs',
     'desktop-dist/embedded-server.mjs',
@@ -117,7 +106,7 @@ export default {
   ],
   npmRebuild: false,
   mac: {
-    target: ['dmg', 'zip'],
+    target: ['dmg'],
     category: 'public.app-category.video',
     icon: 'assets/branding/yolocut-icon.icns',
     entitlements: 'desktop/entitlements.mac.plist',

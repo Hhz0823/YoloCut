@@ -187,10 +187,10 @@ On the Windows release-verification machine, the unpacked build displayed its na
 | Windows x64 | [YoloCut-v0.0.2-x64.exe](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.exe) |
 | macOS Apple Silicon | [YoloCut-v0.0.2-arm64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-arm64.dmg) |
 | macOS Intel | [YoloCut-v0.0.2-x64.dmg](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x64.dmg) |
-| Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
-| Checksums | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-Every package in this table is built and smoke-tested on its native GitHub Actions runner. Windows packages are currently unsigned, macOS packages are ad-hoc signed but not notarized, and Linux AppImages are unsigned. Verify the published SHA-256 values before running a package.
+GitHub Release assets intentionally contain only the directly installable Windows `.exe` and macOS `.dmg` files. Installer SHA-256 values are listed in the release notes rather than attached as another asset. Windows packages are currently unsigned; macOS packages are ad-hoc signed but not notarized.
+
+Linux remains built and smoke-tested in CI but is not attached to GitHub Releases. Linux users can run YoloCut from source using the instructions below. Packaged builds use the in-app version check and open the GitHub Release page for manual installation when an update is available.
 
 ## Run from source
 

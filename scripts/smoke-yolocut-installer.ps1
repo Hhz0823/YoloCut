@@ -1,7 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [string]$Installer,
-  [switch]$ExpectUpdateFeed
+  [string]$Installer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,13 +47,10 @@ try {
   }
   $updateFeedPath = Join-Path $installDir 'resources\app-update.yml'
   $updateFeedPresent = Test-Path -LiteralPath $updateFeedPath -PathType Leaf
-  if ($ExpectUpdateFeed -and -not $updateFeedPresent) {
-    throw 'Release YoloCut package is missing its update feed'
+  if ($updateFeedPresent) {
+    throw 'Installer-only YoloCut package unexpectedly contains a direct update feed'
   }
-  if (-not $ExpectUpdateFeed -and $updateFeedPresent) {
-    throw 'Private YoloCut package unexpectedly contains an update feed'
-  }
-  $updateFeedStatus = if ($updateFeedPresent) { 'enabled-release-build' } else { 'disabled-private-build' }
+  $updateFeedStatus = 'manual-release-check'
 
   $env:CC_SMOKE = '1'
   $env:CC_SMOKE_RENDER = '1'

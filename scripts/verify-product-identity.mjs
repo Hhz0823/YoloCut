@@ -26,7 +26,11 @@ assert.deepEqual(Object.keys(mcpConfig.mcpServers ?? {}), ['yolocut']);
 assert.match(readme, /YoloCut-v0\.0\.2-x64\.exe/);
 assert.match(readme, /releases\/tag\/v0\.0\.2/);
 assert.match(workflow, /refs\/tags\/v/);
-assert.match(workflow, /YoloCut-v\$\{EXPECTED_VERSION\}-x64\.exe\.blockmap/);
+for (const installer of ['x64.exe', 'arm64.dmg', 'x64.dmg']) {
+  assert.match(workflow, new RegExp(`YoloCut-v\\$\\{EXPECTED_VERSION\\}-${installer.replace('.', '\\.')}"`));
+}
+assert.match(workflow, /gh release upload[\s\S]*?release-assets\/\*/);
+assert.doesNotMatch(workflow, /gh release upload[\s\S]*?release-files\/\*/);
 
 const allowedHistoricalBrandFiles = new Set([
   'CHANGELOG.md',

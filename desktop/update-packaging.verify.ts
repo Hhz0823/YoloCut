@@ -1,15 +1,8 @@
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 
-interface PublishConfig {
-  provider?: string;
-  owner?: string;
-  repo?: string;
-  channel?: string;
-}
-
 interface BuilderConfig {
-  publish?: PublishConfig[];
+  publish?: unknown[] | null;
   appId?: string;
   productName?: string;
   artifactName?: string;
@@ -21,25 +14,19 @@ interface BuilderConfig {
 async function configFor(target: string): Promise<BuilderConfig> {
   // Query isolation is intentional: the config reads CC_EB_TARGET once at module evaluation.
   process.env.CC_EB_TARGET = target;
-  const repository = process.env.YOLOCUT_RELEASE_REPOSITORY ?? '';
-  const moduleUrl = new URL(`../config/electron-builder.config.mjs?target=${target}&repository=${encodeURIComponent(repository)}`, import.meta.url);
+  const moduleUrl = new URL(`../config/electron-builder.config.mjs?target=${target}`, import.meta.url);
   const loaded = await import(moduleUrl.href) as { default: BuilderConfig };
   return loaded.default;
 }
 
-process.env.YOLOCUT_RELEASE_REPOSITORY = 'example/YoloCut';
+delete process.env.YOLOCUT_RELEASE_REPOSITORY;
 delete process.env.GITHUB_REPOSITORY;
 const arm64 = await configFor('darwin-arm64');
-assert.deepEqual(arm64.publish, [{
-  provider: 'github',
-  owner: 'example',
-  repo: 'YoloCut',
-  channel: 'latest-arm64',
-}]);
+assert.equal(arm64.publish, null, 'release installers must explicitly disable electron-updater feed inference');
 assert.equal(arm64.appId, 'dev.yolocut.desktop');
 assert.equal(arm64.productName, 'YoloCut');
 assert.equal(arm64.artifactName, '${productName}-v${version}-${arch}.${ext}');
-assert.deepEqual(arm64.mac?.target, ['dmg', 'zip'], 'macOS updates need a zip artifact in addition to the DMG');
+assert.deepEqual(arm64.mac?.target, ['dmg'], 'macOS releases must build only the directly installable DMG');
 assert.ok(arm64.files?.includes('desktop-dist/native-asr-worker.mjs'));
 assert.ok(
   arm64.files?.includes('desktop-dist/embedded-server.mjs'),
@@ -63,7 +50,7 @@ assert.ok(
 );
 
 const x64 = await configFor('darwin-x64');
-assert.equal(x64.publish?.[0]?.channel, 'latest-x64');
+assert.equal(x64.publish, null);
 assert.equal(
   x64.files?.includes('!node_modules/onnxruntime-node/bin/napi-v6/darwin/x64/**'),
   false,
@@ -71,6 +58,7 @@ assert.equal(
 );
 
 const linux = await configFor('linux-x64');
+assert.equal(linux.publish, null);
 assert.equal(linux.linux?.executableName, 'yolocut');
 for (const worker of ['asr', 'semantic', 'clap', 'rhythm', 'tts']) {
   assert.ok(
@@ -112,6 +100,7 @@ assert.equal(
 );
 
 const windows = await configFor('win32-x64');
+assert.equal(windows.publish, null);
 assert.equal(
   windows.files?.includes('!node_modules/onnxruntime-node/bin/napi-v6/win32/x64/**'),
   false,
@@ -126,15 +115,6 @@ assert.ok(
   windows.files?.includes('!node_modules/sqlite-vec-linux-x64/**'),
   'Windows packages must exclude foreign sqlite-vec extensions',
 );
-
-delete process.env.YOLOCUT_RELEASE_REPOSITORY;
-const privateBuild = await configFor('win32-x64');
-assert.deepEqual(
-  privateBuild.publish,
-  [],
-  'local YoloCut installers must not inherit the public release update feed',
-);
-process.env.YOLOCUT_RELEASE_REPOSITORY = 'example/YoloCut';
 
 const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')) as {
   scripts: Record<string, string>;
@@ -164,7 +144,7 @@ assert.match(
 );
 assert.match(packageJson.scripts['desktop:dist'], /--mac --arm64/, 'arm64 packaging must build every configured mac target');
 assert.match(packageJson.scripts['desktop:dist:mac-x64'], /--mac --x64/, 'x64 packaging must build every configured mac target');
-assert.doesNotMatch(packageJson.scripts['desktop:dist'], /--mac dmg/, 'mac packaging must not suppress update zip metadata');
+assert.doesNotMatch(packageJson.scripts['desktop:dist'], /--mac (?:dmg|zip)/, 'mac packaging must use the installer-only target from shared config');
 const windowsDistScript = packageJson.scripts['desktop:dist:win'];
 for (const [scriptName, target] of [
   ['desktop:dist', 'darwin-arm64'],
@@ -215,28 +195,27 @@ const windowsInstallerSmoke = await readFile(
   new URL('../scripts/smoke-yolocut-installer.ps1', import.meta.url),
   'utf8',
 );
-for (const metadata of ['latest-arm64-mac.yml', 'latest-x64-mac.yml', 'latest-x64.yml', 'latest-x64-linux.yml']) {
-  assert.ok(workflow.includes(`release/${metadata}`), `desktop jobs must upload ${metadata}`);
+for (const nativeArtifact of ['release/*.dmg', 'release/*.exe', 'release/*.AppImage']) {
+  assert.ok(workflow.includes(nativeArtifact), `desktop jobs must retain the CI artifact ${nativeArtifact}`);
 }
-assert.doesNotMatch(workflow, /release\/\*\.yml/, 'debug YAML must not leak into release artifacts');
+assert.doesNotMatch(
+  workflow,
+  /release\/\*\.(?:zip|yml|blockmap)/,
+  'CI artifact upload must not retain updater metadata or non-installer archives',
+);
 assert.match(workflow, /EXPECTED_VERSION="\$\{GITHUB_REF_NAME#v\}"/, 'release gate must derive its package version');
-assert.match(workflow, /release\/\*\.blockmap/, 'desktop jobs must upload differential download metadata');
-assert.match(workflow, /-name '\*\.zip'.* = 2/, 'release aggregation must retain both macOS update archives');
-for (const blockmap of [
-  'arm64.zip.blockmap',
-  'x64.zip.blockmap',
-  'x64.exe.blockmap',
-]) {
+for (const installer of ['x64.exe', 'arm64.dmg', 'x64.dmg']) {
   assert.ok(
-    workflow.includes(`release-files/YoloCut-v\${EXPECTED_VERSION}-${blockmap}`),
-    `release gate must require ${blockmap}`,
+    workflow.includes(`release-files/YoloCut-v\${EXPECTED_VERSION}-${installer}`),
+    `release gate must stage ${installer}`,
   );
 }
-assert.match(workflow, /test -f release-files\/latest-arm64-mac\.yml/);
-assert.match(workflow, /test -f release-files\/latest-x64-mac\.yml/);
-assert.match(workflow, /test -f release-files\/latest-x64\.yml/);
-assert.match(workflow, /test -f release-files\/latest-x64-linux\.yml/);
-assert.match(workflow, /release-files\/\*/, 'GitHub Release must publish installers and update metadata together');
+assert.match(workflow, /mkdir release-assets/);
+assert.ok(
+  workflow.includes("find release-assets -type f ! \\( -name '*.exe' -o -name '*.dmg' \\)"),
+  'release staging must reject every non-EXE/DMG file',
+);
+assert.doesNotMatch(workflow, /SHA256SUMS\.txt/, 'checksums belong in release notes, not a release asset');
 assert.match(ciWorkflow, /install -y -qq ffmpeg xvfb/, 'tag CI must install the virtual X server used by Electron tests');
 assert.match(
   ciWorkflow,
@@ -261,9 +240,10 @@ assert.equal(
 );
 assert.match(
   workflow,
-  /Smoke test Windows installer[\s\S]*?smoke-yolocut-installer\.ps1[\s\S]*?-ExpectUpdateFeed/,
-  'the Windows release must use the shared installer smoke and require its update feed',
+  /Smoke test Windows installer[\s\S]*?smoke-yolocut-installer\.ps1[\s\S]*?-Installer/,
+  'the Windows release must use the shared installed-application smoke',
 );
+assert.doesNotMatch(workflow, /-ExpectUpdateFeed/, 'installer-only releases must not require updater metadata');
 for (const smokeFlag of ['CC_SMOKE', 'CC_SMOKE_RENDER', 'CC_SMOKE_MCP_RECOVERY']) {
   assert.ok(
     windowsInstallerSmoke.includes(`$env:${smokeFlag} = '1'`),
@@ -273,24 +253,24 @@ for (const smokeFlag of ['CC_SMOKE', 'CC_SMOKE_RENDER', 'CC_SMOKE_MCP_RECOVERY']
 assert.match(workflow, /hdiutil attach[\s\S]*?"\$\{dmgs\[0\]\}"/, 'macOS smoke must mount the generated DMG');
 assert.match(
   workflow,
-  /"\$mounted_app\/Contents\/MacOS\/YoloCut"/,
-  'macOS smoke must launch the app from the mounted DMG',
+  /ditto "\$mounted_app" "\$app_dir\/YoloCut\.app"/,
+  'macOS smoke must copy the mounted application to a writable temporary directory',
 );
-assert.match(workflow, /unzip -tq "\$\{zips\[0\]\}"/, 'macOS smoke must validate the generated update ZIP');
+assert.doesNotMatch(workflow, /unzip|-name '\*\.zip'/, 'macOS release validation must not depend on a ZIP archive');
 assert.match(
   workflow,
-  /YoloCut\.app\/Contents\/MacOS\/YoloCut/,
-  'macOS update ZIP must contain the application executable',
+  /"\$copied_app\/Contents\/MacOS\/YoloCut"/,
+  'macOS smoke must execute the application copied from the DMG',
 );
 assert.match(
   workflow,
-  /YoloCut\.app\/Contents\/Frameworks\/Electron Framework\.framework\/Versions\/A\/Electron Framework/,
-  'macOS update ZIP must contain the Electron runtime',
+  /"\$copied_app\/Contents\/Frameworks\/Electron Framework\.framework\/Versions\/A\/Electron Framework"/,
+  'the copied DMG application must contain the Electron runtime',
 );
 assert.match(
   workflow,
   /render_runtime="YoloCut\.app\/Contents\/Resources\/chrome-headless-shell\//,
-  'macOS update ZIP must contain the packaged render runtime',
+  'the copied DMG application must contain the packaged render runtime',
 );
 assert.match(
   workflow,
@@ -314,8 +294,8 @@ assert.match(
 );
 assert.match(
   windowsInstallerSmoke,
-  /Private YoloCut package unexpectedly contains an update feed/,
-  'local private packages must fail closed when an update feed is present',
+  /Installer-only YoloCut package unexpectedly contains a direct update feed/,
+  'every installer-only package must fail closed when updater metadata is embedded',
 );
 assert.match(
   workflow,
@@ -333,11 +313,17 @@ for (const smokeName of [
 }
 
 const draftIndex = workflow.indexOf('- name: Create or reuse draft release');
+const pruneIndex = workflow.indexOf('- name: Remove non-installer release assets');
 const uploadIndex = workflow.indexOf('- name: Upload and verify release assets');
+const checksumNotesIndex = workflow.indexOf('- name: Put installer checksums in release notes');
 const publishIndex = workflow.indexOf('- name: Publish verified draft');
 assert.ok(
-  draftIndex >= 0 && draftIndex < uploadIndex && uploadIndex < publishIndex,
-  'release workflow must create a draft, verify uploaded assets, then publish in that order',
+  draftIndex >= 0
+    && draftIndex < pruneIndex
+    && pruneIndex < uploadIndex
+    && uploadIndex < checksumNotesIndex
+    && checksumNotesIndex < publishIndex,
+  'release workflow must create a draft, prune, verify installers, add checksums, then publish',
 );
 assert.match(
   workflow,
@@ -351,8 +337,18 @@ assert.match(
 );
 assert.match(
   workflow,
-  /gh release upload[\s\S]*?release-files\/\*[\s\S]*?--clobber; then/,
-  'draft retries must replace partial or stale copies of expected assets',
+  /gh release upload[\s\S]*?release-assets\/\*[\s\S]*?--clobber; then/,
+  'draft retries must replace installer-only assets',
+);
+assert.match(
+  workflow,
+  /case "\$asset_name" in[\s\S]*?\*\.exe\|\*\.dmg\)[\s\S]*?gh api --method DELETE/,
+  'the draft must delete every remote asset that is not an EXE or DMG',
+);
+assert.doesNotMatch(
+  workflow,
+  /gh release upload[\s\S]*?release-files\/\*/,
+  'raw CI artifacts must never be uploaded directly to a GitHub Release',
 );
 assert.match(workflow, /sha256sum "\$asset"/, 'release verification must hash each local asset');
 assert.match(
@@ -370,9 +366,11 @@ assert.match(
   /cmp -s "\$local_manifest" "\$remote_manifest"/,
   'remote asset names and SHA-256 digests must exactly match the local manifest',
 );
+assert.match(workflow, /yolocut-installer-checksums:start/);
+assert.match(workflow, /--notes-file "\$next_notes"/, 'installer hashes must be published in release notes');
 assert.ok(
   workflow.indexOf('--draft=false') > publishIndex,
   'the verified draft must be published only in the final release step',
 );
 
-console.log('update-packaging.verify: per-architecture channels and release metadata contract OK');
+console.log('update-packaging.verify: installer-only release, manual update, smoke and digest contracts OK');
