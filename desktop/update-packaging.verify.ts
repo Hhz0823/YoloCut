@@ -166,6 +166,18 @@ assert.match(packageJson.scripts['desktop:dist'], /--mac --arm64/, 'arm64 packag
 assert.match(packageJson.scripts['desktop:dist:mac-x64'], /--mac --x64/, 'x64 packaging must build every configured mac target');
 assert.doesNotMatch(packageJson.scripts['desktop:dist'], /--mac dmg/, 'mac packaging must not suppress update zip metadata');
 const windowsDistScript = packageJson.scripts['desktop:dist:win'];
+for (const [scriptName, target] of [
+  ['desktop:dist', 'darwin-arm64'],
+  ['desktop:dist:mac-x64', 'darwin-x64'],
+  ['desktop:dist:win', 'win32-x64'],
+  ['desktop:dist:linux', 'linux-x64'],
+] as const) {
+  assert.match(
+    packageJson.scripts[scriptName],
+    new RegExp(`node scripts/clean-desktop-release-output\\.mjs ${target}`),
+    `${scriptName} must remove target-specific stale release output before packaging`,
+  );
+}
 assert.match(
   windowsDistScript,
   /spawnSync\(process\.execPath,\['node_modules\/electron-builder\/cli\.js'/,

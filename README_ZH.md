@@ -93,6 +93,7 @@ Agent 创建可审阅的编辑会话
 | Agent | 内置对话 Agent、技能、提案、审批策略、进度、历史和统一的 119 项工具目录 |
 | 批量剪辑 | 素材目录、剪辑脚本、口播脚本、参考成片、持久队列、逐条工程、质检和状态回读 |
 | 本地与云端 AI | 本地 ASR/TTS/模型包，以及可配置的第三方 LLM、图片、视频、音乐和音效服务 |
+| 桌面运行时 | 原生启动壳、内置服务并行启动、重型服务延迟加载、隔离冒烟配置和分阶段启动追踪 |
 | 交付 | MP4、音频、SRT、FCPXML、便携工程包、导出历史和硬件感知 H.264 路由 |
 
 ## Agent 原生架构
@@ -167,6 +168,18 @@ YoloCut 把交互代理链路与最终质量链路分开：分析和预览可以
 
 > Fish S2 模型权重采用 Fish Audio Research License，商业使用需要另行获得书面许可。硬件分档是保守策略契约，不是对所有驱动和整机配置的性能承诺。
 
+## 更快的桌面启动
+
+YoloCut `v0.0.2` 将桌面启动拆成多个阶段，不再让首个窗口等待完整剪辑栈全部加载：
+
+- Electron 先显示轻量原生启动壳，再加载内置应用服务。
+- 内置服务并行启动；编辑器可用后，GPU 完整探测继续在后台完成。
+- 模型、缩略图、更新检查和安装包内的渲染运行时延迟到对应功能或启动后的空闲阶段再加载。
+- 渲染器页面与工程首页弹窗保持懒加载，完整编辑器依赖图不会阻塞工程首页首屏。
+- 桌面冒烟测试为每次运行创建独立临时配置与数据目录，不接触用户工程、凭据、素材或正在运行的 YoloCut。
+
+在本轮 Windows 发布验证机上，解压版冷启动约 **85 ms** 显示原生启动壳、约 **0.72 秒**启动内置服务、约 **2.79 秒**完成首个渲染器加载；预热后的渲染器约为 **0.51 秒**。这些是单台机器的诊断数据，不代表所有设备。启动桌面构建时设置 `YOLOCUT_STARTUP_TRACE=1`，可输出当前电脑的分阶段耗时。
+
 ## 下载
 
 | 平台 | v0.0.2 安装包 |
@@ -177,7 +190,7 @@ YoloCut 把交互代理链路与最终质量链路分开：分析和预览可以
 | Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
 | 校验文件 | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-Windows 安装包当前未签名；macOS 使用临时签名但尚未公证；Linux AppImage 也未签名。运行前请使用 Release 中提供的 SHA-256 校验安装包。
+表中安装包均由对应平台的 GitHub Actions 原生运行器构建并完成冒烟测试。Windows 安装包当前未签名；macOS 使用临时签名但尚未公证；Linux AppImage 也未签名。运行前请使用 Release 中提供的 SHA-256 校验安装包。
 
 ## 从源码运行
 
@@ -220,7 +233,7 @@ npm run desktop:dist:win
 | `src/transcript/`、`src/captions/` | ASR、文字稿编辑、字幕与翻译 |
 | `src/persist/` | 工程、版本、媒体元数据与批量任务 |
 | `server/` | 本地 HTTP、MCP、模型、媒体处理、任务与导出 |
-| `desktop/` | Electron 窗口、硬件探测、安全存储与本机 IPC |
+| `desktop/` | 分阶段 Electron 启动、窗口、硬件探测、安全存储与本机 IPC |
 | `remotion/` | 无头渲染与交付导出 |
 
 ```bash
@@ -231,6 +244,9 @@ npm run verify:architecture      # 依赖边界
 npm run verify:mcp               # Agent/MCP 契约
 npm run verify:media-performance # 编解码、代理、加速与回退
 npm run verify:auto-edit         # 批量自动剪辑契约
+npm run desktop:smoke             # 内置服务与桌面桥接
+npm run desktop:smoke:render      # 真实安装包渲染链路
+npm run desktop:smoke:post-startup # 延迟启动任务
 npm run desktop:smoke:agent-window
 ```
 

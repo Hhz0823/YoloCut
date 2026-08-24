@@ -18,6 +18,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   新增 AV1、VP9、M2TS 与仅能软件解码的 FFV1 真实素材回归，覆盖规范化、预览代理、自动调色、场景识别、海报、胶片条、Agent 抽帧与时间线引用切片。
 - Added a centralized media probe and architecture gates that reject runtime dependency cycles, layer violations, literal system FFmpeg/FFprobe launches, and feature modules that bypass the shared decode fallback policy.
   新增统一媒体探测器与架构门禁，拒绝运行时循环依赖、分层越界、直接启动系统 FFmpeg/FFprobe，以及绕过共享解码回退策略的功能模块。
+- Added stage-level desktop startup tracing through `YOLOCUT_STARTUP_TRACE=1`, plus dedicated smoke coverage for the real render path and deferred post-startup work.
+  新增 `YOLOCUT_STARTUP_TRACE=1` 桌面分阶段启动追踪，并为真实渲染链路和延迟启动任务增加专用冒烟覆盖。
 
 ### Changed / 变更
 
@@ -29,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   将旧的平台 FFprobe 5.x 包替换为 `@derhuerst/ffprobe-static@5.3.0`，使 Windows、macOS 与 Linux 的探针都与内置 FFmpeg 6.1.1 匹配。
 - Import pickers and Agent intake now accept a broader FFmpeg-backed container set, including MXF, M2TS/MTS/TS, MKV, AVI, WMV, FLV, VOB, DV, and RMVB.
   导入选择器与 Agent 素材入口现支持更广的 FFmpeg 容器集合，包括 MXF、M2TS/MTS/TS、MKV、AVI、WMV、FLV、VOB、DV 与 RMVB。
+- Desktop startup now displays a lightweight native shell first, starts the embedded server in parallel, keeps GPU discovery asynchronous, and defers models, thumbnails, updater checks, and render-runtime preparation until after the initial renderer is ready.
+  桌面启动现在优先显示轻量原生启动壳、并行启动内置服务、异步完成 GPU 探测，并将模型、缩略图、更新检查和渲染运行时准备延迟到首个渲染器就绪之后。
+- Dashboard dialogs and renderer surfaces now stay behind lazy module boundaries so the complete editor dependency graph is not part of the initial dashboard load.
+  工程首页弹窗与渲染器页面现在保持在懒加载模块边界之后，完整编辑器依赖图不再进入工程首页首屏加载路径。
 
 ### Fixed / 修复
 
@@ -46,11 +52,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   稳定高负载测试中的 Codex 快速登录完成竞态，同时仍会对真正卡住的待登录状态报错。
 - Split preview probing into stable stream metadata and optional keyframe sampling, so an older platform FFprobe that crashes during frame scans now falls back conservatively to a compatibility proxy instead of aborting media import.
   将预览探测拆分为稳定的流元数据与可选关键帧采样；旧版平台 FFprobe 若在帧扫描时崩溃，现在会保守回退到兼容代理，而不会中断素材导入。
+- Desktop smoke runs now use unique temporary application profiles and data roots, preventing acceptance tests from leaking projects or state into later runs and from touching a user's live YoloCut data.
+  桌面冒烟现在使用唯一的临时应用配置与数据根目录，避免验收测试向后续运行泄漏工程或状态，也不会接触用户正在使用的 YoloCut 数据。
+- Desktop packaging now removes only the current target's generated output before invoking electron-builder, preventing a private or release build from inheriting stale updater metadata while preserving other versions and platform artifacts.
+  桌面打包现在会在调用 electron-builder 前仅清理当前目标的生成物，防止私有构建或正式构建继承旧的更新源元数据，同时保留其他版本与平台构建物。
 
 ### Validation / 验证
 
 - Full tests, production build budgets, desktop and detached-Agent smoke tests, the real 119-tool MCP edit flow, and an RTX 5070 NVDEC → CUDA → NVENC 4K proxy run passed before release.
   发布前已通过全量测试、生产构建体积门禁、桌面与独立 Agent 冒烟、119 项工具的真实 MCP 编辑流程，以及 RTX 5070 的 NVDEC → CUDA → NVENC 4K 代理实测。
+- On the Windows release-verification machine, the unpacked build displayed the native shell in about 85 ms, started the embedded server in about 0.72 s, and loaded the first renderer in about 2.79 s on a cold run; a warmed renderer loaded in about 0.51 s.
+  在 Windows 发布验证机上，解压版冷启动约 85 ms 显示原生启动壳、约 0.72 秒启动内置服务、约 2.79 秒完成首个渲染器加载；预热后的渲染器约为 0.51 秒。
 
 ## [0.0.1] - 2026-08-24
 

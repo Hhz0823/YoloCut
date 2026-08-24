@@ -82,6 +82,8 @@ MODEL-OPT-PLAN.md
 !/scripts/run-desktop-smoke.mjs
 !/scripts/run-agent-edit-acceptance.mjs
 !/scripts/smoke-yolocut-installer.ps1
+!/scripts/clean-desktop-release-output.mjs
+!/scripts/clean-desktop-release-output.d.mts
 !/scripts/run-open-effects-webgl.mjs
 !/scripts/verify-open-effects-webgl.mjs
 !/scripts/verify-architecture.mjs

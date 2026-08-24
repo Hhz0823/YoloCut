@@ -93,6 +93,7 @@ All screenshots above were captured from the current YoloCut `v0.0.2` desktop ap
 | Agent | Built-in chat Agent, reusable Skills, proposals, approval policy, progress, history, and the canonical 119-tool catalog |
 | Batch editing | Media folders, edit scripts, narration scripts, reference videos, durable queues, per-job projects, QA, and status readback |
 | Local and cloud AI | Local ASR/TTS/model packs plus configurable third-party LLM, image, video, music, and sound providers |
+| Desktop runtime | Immediate native startup shell, parallel embedded server startup, deferred heavy services, isolated smoke profiles, and stage-level startup tracing |
 | Delivery | MP4, audio, SRT, FCPXML, portable project packages, export history, and hardware-aware H.264 routing |
 
 ## Agent-native by design
@@ -167,6 +168,18 @@ YoloCut separates the interactive proxy path from final-quality media. Analysis 
 
 > Fish S2 model weights use the Fish Audio Research License. Commercial use requires separate written permission. Hardware tiers are conservative policy contracts, not performance guarantees for every driver and machine.
 
+## Faster desktop startup
+
+YoloCut `v0.0.2` now stages desktop startup instead of blocking the first window on the complete editing stack:
+
+- Electron displays a lightweight native startup shell before loading the embedded application server.
+- The server starts in parallel, while GPU discovery continues asynchronously after the editor becomes usable.
+- Models, thumbnails, updater checks, and the packaged render runtime are deferred until the relevant feature or post-startup window needs them.
+- Renderer surfaces and dashboard dialogs stay behind lazy boundaries so the full editor graph is not part of the initial dashboard load.
+- Desktop smoke tests use a unique temporary profile and data directory, preventing tests from touching a user's projects, credentials, media, or live YoloCut process.
+
+On the Windows release-verification machine, the unpacked build displayed its native shell in about **85 ms**, brought up the embedded server in about **0.72 s**, and loaded the first renderer in about **2.79 s** on a cold run; a warmed renderer loaded in about **0.51 s**. These are diagnostic measurements from one machine, not cross-device guarantees. Set `YOLOCUT_STARTUP_TRACE=1` when launching the desktop build to print stage timings for another system.
+
 ## Download
 
 | Platform | v0.0.2 package |
@@ -177,7 +190,7 @@ YoloCut separates the interactive proxy path from final-quality media. Analysis 
 | Linux x64 | [YoloCut-v0.0.2-x86_64.AppImage](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/YoloCut-v0.0.2-x86_64.AppImage) |
 | Checksums | [SHA256SUMS.txt](https://github.com/Hhz0823/YoloCut/releases/download/v0.0.2/SHA256SUMS.txt) |
 
-Windows packages are currently unsigned. macOS packages are ad-hoc signed but not notarized, and Linux AppImages are unsigned. Verify the SHA-256 values published with the release before running a package.
+Every package in this table is built and smoke-tested on its native GitHub Actions runner. Windows packages are currently unsigned, macOS packages are ad-hoc signed but not notarized, and Linux AppImages are unsigned. Verify the published SHA-256 values before running a package.
 
 ## Run from source
 
@@ -220,7 +233,7 @@ Development profiles isolate projects, media, credentials, tasks, and settings p
 | `src/transcript/`, `src/captions/` | ASR, transcript editing, captions, and translation |
 | `src/persist/` | Projects, versions, media metadata, and batch jobs |
 | `server/` | Local HTTP, MCP, models, media processing, jobs, and exports |
-| `desktop/` | Electron windows, hardware probing, secure storage, and native IPC |
+| `desktop/` | Staged Electron startup, windows, hardware probing, secure storage, and native IPC |
 | `remotion/` | Headless rendering and deliverable exports |
 
 ```bash
@@ -231,6 +244,9 @@ npm run verify:architecture      # enforced dependency boundaries
 npm run verify:mcp               # Agent/MCP contract checks
 npm run verify:media-performance # codecs, proxies, acceleration, fallbacks
 npm run verify:auto-edit         # batch auto-edit contracts
+npm run desktop:smoke             # embedded server and desktop bridge
+npm run desktop:smoke:render      # real packaged rendering path
+npm run desktop:smoke:post-startup # deferred startup work
 npm run desktop:smoke:agent-window
 ```
 
