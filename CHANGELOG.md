@@ -56,6 +56,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   桌面冒烟现在使用唯一的临时应用配置与数据根目录，避免验收测试向后续运行泄漏工程或状态，也不会接触用户正在使用的 YoloCut 数据。
 - Desktop packaging now removes only the current target's generated output before invoking electron-builder, preventing a private or release build from inheriting stale updater metadata while preserving other versions and platform artifacts.
   桌面打包现在会在调用 electron-builder 前仅清理当前目标的生成物，防止私有构建或正式构建继承旧的更新源元数据，同时保留其他版本与平台构建物。
+- Tag CI now runs Electron and WebGL regressions inside Xvfb on Ubuntu, matching the desktop release validation environment instead of failing when no display server is available.
+  标签 CI 现在会在 Ubuntu 的 Xvfb 中运行 Electron 与 WebGL 回归，与桌面发布验证环境保持一致，不再因缺少显示服务器而失败。
 
 ### Validation / 验证
 

@@ -34,8 +34,8 @@ jobs:
           # fails. CI only validates logic and doesn't load the desktop-native ORT
           # runtime, so skip that download.
           ONNXRUNTIME_NODE_INSTALL: 'skip'
-      - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Install media test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg xvfb
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -46,6 +46,10 @@ jobs:
             exit 1
           fi
       - run: npm run lint
-      - run: npm test
+      - name: Run test suite
+        env:
+          ELECTRON_DISABLE_SANDBOX: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: xvfb-run --auto-servernum npm test
       - run: npm run verify:agent-skill
       - run: npm run build

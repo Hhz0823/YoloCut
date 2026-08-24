@@ -210,6 +210,7 @@ assert.match(
 );
 
 const workflow = await readFile(new URL('../.github/workflows/desktop.yml', import.meta.url), 'utf8');
+const ciWorkflow = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const windowsInstallerSmoke = await readFile(
   new URL('../scripts/smoke-yolocut-installer.ps1', import.meta.url),
   'utf8',
@@ -236,6 +237,12 @@ assert.match(workflow, /test -f release-files\/latest-x64-mac\.yml/);
 assert.match(workflow, /test -f release-files\/latest-x64\.yml/);
 assert.match(workflow, /test -f release-files\/latest-x64-linux\.yml/);
 assert.match(workflow, /release-files\/\*/, 'GitHub Release must publish installers and update metadata together');
+assert.match(ciWorkflow, /install -y -qq ffmpeg xvfb/, 'tag CI must install the virtual X server used by Electron tests');
+assert.match(
+  ciWorkflow,
+  /run: xvfb-run --auto-servernum npm test/,
+  'tag CI must run Electron and WebGL tests under Xvfb',
+);
 
 assert.doesNotMatch(
   workflow,
