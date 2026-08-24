@@ -42,5 +42,24 @@ for (const heavyDialog of [
 const shellSource = readFileSync(new URL('./appShell.ts', import.meta.url), 'utf8');
 assert.match(shellSource, /import\('\.\/firstRunSeed'\)/);
 assert.doesNotMatch(shellSource, /import\('\.\.\/editor\/initial'\)/);
+assert.match(
+  shellSource,
+  /setTimeout\([\s\S]*syncAgentBackends/,
+  'provider status and local model hashing must wait until after first paint',
+);
+
+const dashboardModelSource = readFileSync(
+  new URL('../components/dashboard/useDashboardModel.ts', import.meta.url),
+  'utf8',
+);
+assert.match(dashboardModelSource, /THUMB_RENDER_CONCURRENCY = 1/);
+assert.match(dashboardModelSource, /THUMB_RENDER_DELAY_MS = 4_000/);
+assert.match(dashboardModelSource, /requestIdleCallback/, 'project poster rendering must wait for dashboard idle time');
+
+const updateNoticeSource = readFileSync(
+  new URL('../ui/UpstreamUpdateNotice.tsx', import.meta.url),
+  'utf8',
+);
+assert.match(updateNoticeSource, /20_000/, 'automatic release checks must not compete with first paint');
 
 console.log('startupSplit.verify: renderer surfaces, dashboard dialogs, and first-run templates are lazy');

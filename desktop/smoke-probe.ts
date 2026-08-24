@@ -5,10 +5,65 @@ import { runDesktopMcpRecoverySmoke } from './smoke-mcp-recovery.ts';
 import { runDesktopAgentWorkbenchSmoke } from './smoke-agent-workbench.ts';
 
 const RENDER_DRAIN_MS = 500;
+const POST_STARTUP_MINIMUM_MS = 21_000;
+const POST_STARTUP_TIMEOUT_MS = 45_000;
 // The server installs a global outbound ProxyAgent so provider requests follow
 // the user's proxy configuration. Desktop smoke requests are loopback traffic
 // and must stay direct even when that proxy intentionally ignores NO_PROXY.
 const LOOPBACK_DISPATCHER = new Agent();
+
+interface PostStartupSnapshot {
+  readonly readyState?: unknown;
+  readonly bodyTextLength?: unknown;
+  readonly projectCards?: unknown;
+  readonly posterImages?: unknown;
+  readonly updatePhase?: unknown;
+}
+
+async function runPostStartupProbe(origin: string, win: BrowserWindow): Promise<void> {
+  const startedAt = Date.now();
+  let snapshot: PostStartupSnapshot = {};
+  win.showInactive();
+  try {
+    while (Date.now() - startedAt < POST_STARTUP_TIMEOUT_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (win.isDestroyed()) throw new Error('desktop window closed during post-startup work');
+      snapshot = await win.webContents.executeJavaScript(`(async () => {
+        const update = await window.yoloCutDesktop?.updates?.getState?.();
+        return {
+          readyState: document.readyState,
+          bodyTextLength: document.body?.innerText?.length ?? 0,
+          projectCards: document.querySelectorAll('.cc-project-card').length,
+          posterImages: document.querySelectorAll('.cc-project-thumbnail img[src^="data:image/"]').length,
+          updatePhase: update?.phase,
+        };
+      })()`) as PostStartupSnapshot;
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= POST_STARTUP_MINIMUM_MS
+        && typeof snapshot.posterImages === 'number' && snapshot.posterImages >= 1
+        && snapshot.updatePhase !== 'idle') break;
+    }
+    if (snapshot.readyState !== 'complete'
+      || typeof snapshot.bodyTextLength !== 'number' || snapshot.bodyTextLength < 100
+      || typeof snapshot.projectCards !== 'number' || snapshot.projectCards < 1) {
+      throw new Error(`dashboard became unhealthy after delayed startup work: ${JSON.stringify(snapshot)}`);
+    }
+    if (typeof snapshot.posterImages !== 'number' || snapshot.posterImages < 1) {
+      throw new Error(`delayed dashboard poster render did not finish: ${JSON.stringify(snapshot)}`);
+    }
+    if (typeof snapshot.updatePhase !== 'string' || snapshot.updatePhase === 'idle') {
+      throw new Error(`automatic update check did not leave idle state: ${JSON.stringify(snapshot)}`);
+    }
+    const health = await undiciFetch(`${origin}/api/keys`, { dispatcher: LOOPBACK_DISPATCHER });
+    if (!health.ok) throw new Error(`post-startup /api/keys → HTTP ${health.status}`);
+    console.log(
+      `[smoke] delayed startup work ok after ${Date.now() - startedAt}ms `
+      + `(poster=${String(snapshot.posterImages)}, update=${String(snapshot.updatePhase)})`,
+    );
+  } finally {
+    if (!win.isDestroyed()) win.hide();
+  }
+}
 
 export async function runDesktopSmokeProbe(
   origin: string,
@@ -134,6 +189,9 @@ export async function runDesktopSmokeProbe(
   console.log('[smoke] desktop native inference preload ok');
   if (process.env.CC_SMOKE_AGENT_WINDOW === '1') {
     await runDesktopAgentWorkbenchSmoke(win);
+  }
+  if (process.env.CC_SMOKE_POST_STARTUP === '1') {
+    await runPostStartupProbe(origin, win);
   }
   if (!render) return;
   const state = { fps: 30, width: 640, height: 360, items: [], selectedId: null };

@@ -9,10 +9,12 @@
 //
 // Lazily cached: the agent instance is rebuilt only when the resolved URL
 // changes, so a settings edit takes effect on the next request.
-import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ProxyAgent } from 'undici';
+import { createRequire } from 'node:module';
 import type { Agent as HttpAgent } from 'node:http';
+import type { Dispatcher } from 'undici';
 import { getKey } from './keystore.ts';
+
+const require = createRequire(import.meta.url);
 
 /** Resolved proxy URL: keystore PROXY_URL first, then standard proxy environment variables. */
 export function environmentProxyUrl(): string {
@@ -30,18 +32,19 @@ export function outboundProxyUrl(): string {
 
 let cachedDispatcherUrl = '';
 let cachedHttpAgentUrl = '';
-let cachedDispatcher: ProxyAgent | null = null;
+let cachedDispatcher: Dispatcher | null = null;
 let cachedHttpAgent: HttpAgent | null = null;
 
 /**
  * undici dispatcher for `fetch(url, { dispatcher })`. `undefined` = no proxy
  * (undici falls back to the default global dispatcher).
  */
-export function proxyDispatcher(): ProxyAgent | undefined {
+export function proxyDispatcher(): Dispatcher | undefined {
   const url = outboundProxyUrl();
   if (url !== cachedDispatcherUrl) {
     cachedDispatcherUrl = url;
     try {
+      const { ProxyAgent } = require('undici') as typeof import('undici');
       cachedDispatcher = url ? new ProxyAgent(url) : null;
     } catch {
       cachedDispatcher = null;
@@ -59,6 +62,7 @@ export function outboundHttpAgent(): HttpAgent | undefined {
   if (url !== cachedHttpAgentUrl) {
     cachedHttpAgentUrl = url;
     try {
+      const { HttpsProxyAgent } = require('https-proxy-agent') as typeof import('https-proxy-agent');
       cachedHttpAgent = url ? new HttpsProxyAgent(url) : null;
     } catch {
       cachedHttpAgent = null;

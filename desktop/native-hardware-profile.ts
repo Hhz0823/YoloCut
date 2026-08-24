@@ -24,6 +24,19 @@ interface HardwareHostSnapshot {
   readonly graphicsFeatures: unknown;
 }
 
+function hostSnapshot(electronApp: ElectronGpuProbe): HardwareHostSnapshot {
+  const processors = cpus();
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    cpuModel: processors[0]?.model ?? process.arch,
+    logicalCores: processors.length || 1,
+    totalMemoryBytes: totalmem(),
+    hardwareAcceleration: electronApp.isHardwareAccelerationEnabled(),
+    graphicsFeatures: electronApp.getGPUFeatureStatus(),
+  };
+}
+
 function supportedPlatform(platform: NodeJS.Platform): DesktopHardwareCapabilities['platform'] {
   return platform === 'darwin' || platform === 'win32' || platform === 'linux'
     ? platform
@@ -108,20 +121,18 @@ export function normalizeDesktopHardwareProfile(
 export async function detectDesktopHardwareProfile(
   electronApp: ElectronGpuProbe,
 ): Promise<DesktopHardwareCapabilities> {
-  const processors = cpus();
   let gpuInfo: unknown = {};
   try {
     gpuInfo = await electronApp.getGPUInfo('complete');
   } catch {
     // Electron rejects when both hardware and software GPU implementations are disabled.
   }
-  return normalizeDesktopHardwareProfile(gpuInfo, {
-    platform: process.platform,
-    arch: process.arch,
-    cpuModel: processors[0]?.model ?? process.arch,
-    logicalCores: processors.length || 1,
-    totalMemoryBytes: totalmem(),
-    hardwareAcceleration: electronApp.isHardwareAccelerationEnabled(),
-    graphicsFeatures: electronApp.getGPUFeatureStatus(),
-  });
+  return normalizeDesktopHardwareProfile(gpuInfo, hostSnapshot(electronApp));
+}
+
+/** Fast synchronous host snapshot used while Electron gathers full GPU details. */
+export function snapshotDesktopHardwareProfile(
+  electronApp: ElectronGpuProbe,
+): DesktopHardwareCapabilities {
+  return normalizeDesktopHardwareProfile({}, hostSnapshot(electronApp));
 }

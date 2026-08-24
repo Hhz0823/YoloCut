@@ -41,6 +41,13 @@ assert.equal(arm64.productName, 'YoloCut');
 assert.equal(arm64.artifactName, '${productName}-v${version}-${arch}.${ext}');
 assert.deepEqual(arm64.mac?.target, ['dmg', 'zip'], 'macOS updates need a zip artifact in addition to the DMG');
 assert.ok(arm64.files?.includes('desktop-dist/native-asr-worker.mjs'));
+assert.ok(
+  arm64.files?.includes('desktop-dist/embedded-server.mjs'),
+  'the lazily loaded embedded server bundle must ship with the desktop main process',
+);
+assert.ok(arm64.files?.includes('desktop-dist/project-store-ipc.mjs'));
+assert.ok(arm64.files?.includes('desktop-dist/smoke-probe.mjs'));
+assert.ok(arm64.files?.includes('desktop-dist/remotion-render.mjs'));
 assert.ok(arm64.files?.includes('desktop-dist/native-semantic-worker.mjs'));
 assert.ok(arm64.files?.includes('desktop-dist/native-clap-worker.mjs'));
 assert.ok(arm64.files?.includes('desktop-dist/native-rhythm-worker.mjs'));

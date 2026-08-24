@@ -15,18 +15,19 @@ import {
 } from 'electron';
 import { buildTextContextMenuTemplate } from './context-menu.ts';
 import { buildApplicationMenuTemplate } from './application-menu.ts';
-import { startEmbeddedServer } from './embedded-server.ts';
 import { createTransparentMovProxy, importLocalMedia } from './local-media-import.ts';
 import {
   createLocalMediaImportHandler,
   LOCAL_MEDIA_IMPORT_CHANNEL,
 } from './local-media-bridge.ts';
-import { installProjectStoreIpc } from './project-store-ipc.ts';
 import { installEditorAuthIpc } from './editor-auth-ipc.ts';
 import { installDesktopUpdateIpc } from './update-ipc.ts';
 import { supportsDirectDesktopUpdates } from './update-service.ts';
 import { installDesktopInferenceIpc } from './native-inference-ipc.ts';
-import { detectDesktopHardwareProfile } from './native-hardware-profile.ts';
+import {
+  detectDesktopHardwareProfile,
+  snapshotDesktopHardwareProfile,
+} from './native-hardware-profile.ts';
 import { installDirectoryWatchIpc } from './directory-watch-ipc.ts';
 import { importAgentPaths } from './agent-path-import.ts';
 import { AutoEditSourceGrantStore } from './auto-edit-source-grants.ts';
@@ -71,7 +72,6 @@ import {
   validatedDirectory,
   validDesktopExportFilename,
 } from './export-directory-state.ts';
-import { runDesktopSmokeProbe } from './smoke-probe.ts';
 import { runtimeProfile } from '../server/runtime-profile.ts';
 import { PRODUCT_NAME } from '../shared/product-brand.ts';
 import {
@@ -79,6 +79,7 @@ import {
   isDesktopLocale,
   type DesktopLocale,
 } from '../shared/desktop-locale.ts';
+import { setRenderRuntimeReadinessProvider } from '../server/render-runtime-readiness.ts';
 
 // Electron main process entry. dev mode: esbuild hits desktop-dist/main.mjs,dist/ in the codebase root;
 // Packaging form: dist/, resonance-bundle, chrome-headless-shell use extraResources.
@@ -96,7 +97,17 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=6144');
 // CC_SMOKE_RENDER=1 adds a true rendering probe (packaged version acceptance: pre-bundled + full browser link included in the package).
 const SMOKE = process.env.CC_SMOKE === '1';
 const SMOKE_RENDER = process.env.CC_SMOKE_RENDER === '1';
+const STARTUP_TRACE = process.env.YOLOCUT_STARTUP_TRACE === '1';
+const STARTUP_STARTED_AT = performance.now();
 const SMOKE_TIMEOUT_MS = SMOKE_RENDER ? 240_000 : 90_000;
+const PACKAGED_RENDER_WARMUP_DELAY_MS = 10_000;
+const STARTUP_SHELL_URL = `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="color-scheme" content="dark">
+<style>
+html,body{height:100%;margin:0;background:#1c1c1e;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{display:grid;place-items:center}.shell{display:flex;align-items:center;gap:12px;padding:18px 22px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#2c2c2e}
+.mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#3a3a3c;font-weight:700}.name{font-size:16px;font-weight:650}.status{margin-top:3px;color:#a1a1a6;font-size:12px}
+</style></head><body><div class="shell"><div class="mark">Y</div><div><div class="name">YoloCut</div><div class="status">正在启动剪辑工作台…</div></div></div></body></html>`)}`;
 let mainWindow: BrowserWindow | null = null;
 let agentWorkbenchWindow: BrowserWindow | null = null;
 let agentWorkbenchState: AgentWorkbenchState = {
@@ -108,6 +119,14 @@ let agentWorkbenchState: AgentWorkbenchState = {
 let agentWorkbenchCloseForDock = false;
 let agentWorkbenchPendingDock: AgentWorkbenchRequest | null = null;
 let desktopLocale: DesktopLocale = 'zh';
+
+function traceStartup(stage: string, details?: unknown): void {
+  if (!STARTUP_TRACE) return;
+  const elapsed = Math.round((performance.now() - STARTUP_STARTED_AT) * 10) / 10;
+  console.log(
+    `[startup] ${stage} +${elapsed}ms${details === undefined ? '' : ` ${JSON.stringify(details)}`}`,
+  );
+}
 
 function applyApplicationMenu(locale: DesktopLocale): void {
   desktopLocale = locale;
@@ -590,22 +609,80 @@ function registerDesktopHandlers(trustedOrigin: string): void {
 
 async function boot(): Promise<void> {
   await app.whenReady();
+  traceStartup('electron-ready');
   applyApplicationMenu(desktopLocale);
-  if (app.isPackaged) {
-    await preparePackagedRuntime({
-      resourcesPath: process.resourcesPath,
-      userDataPath: app.getPath('userData'),
-      version: app.getVersion(),
-    });
+
+  const initialBounds = resolveInitialDesktopWindowBounds(screen.getPrimaryDisplay().workArea);
+  const win = new BrowserWindow({
+    ...initialBounds,
+    show: !SMOKE,
+    backgroundColor: '#1c1c1e',
+    title: PRODUCT_NAME,
+    ...desktopWindowFrameOptions(),
+    webPreferences: {
+      preload: PRELOAD_PATH,
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      // Keep the editor bridge heartbeat alive while the window is backgrounded.
+      backgroundThrottling: false,
+    },
+  });
+  applyDesktopWindowFrame(win);
+  installResponsiveWindowScale(win);
+  mainWindow = win;
+  traceStartup('native-window-created');
+  win.once('closed', () => {
+    mainWindow = null;
+    if (agentWorkbenchWindow && !agentWorkbenchWindow.isDestroyed()) {
+      agentWorkbenchCloseForDock = true;
+      agentWorkbenchWindow.close();
+    }
+  });
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = buildTextContextMenuTemplate(params, desktopLocale);
+    if (!template.length) return;
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
+  if (!SMOKE) {
+    void win.loadURL(STARTUP_SHELL_URL)
+      .then(() => traceStartup('startup-shell-loaded'))
+      .catch(() => undefined);
   }
+
+  let packagedRuntimePromise: Promise<void> | null = null;
+  const ensurePackagedRenderRuntime = (): Promise<void> => {
+    if (!app.isPackaged) return Promise.resolve();
+    if (!packagedRuntimePromise) {
+      packagedRuntimePromise = preparePackagedRuntime({
+        resourcesPath: process.resourcesPath,
+        userDataPath: app.getPath('userData'),
+        version: app.getVersion(),
+      }).catch((error) => {
+        packagedRuntimePromise = null;
+        throw error;
+      });
+    }
+    return packagedRuntimePromise;
+  };
+  setRenderRuntimeReadinessProvider(ensurePackagedRenderRuntime);
+
+  const hardwarePromise = detectDesktopHardwareProfile(app);
   const devOrigin = resolveDesktopDevOrigin({
     configuredDevUrl: process.env.CC_DESKTOP_DEV_URL,
     packaged: app.isPackaged,
     smoke: SMOKE,
   });
-  const origin = devOrigin ?? (await startEmbeddedServer(DIST_DIR)).origin;
+  const embeddedServerModule = new URL('./embedded-server.mjs', import.meta.url).href;
+  const origin = devOrigin ?? (
+    await (await import(embeddedServerModule) as typeof import('./embedded-server.ts'))
+      .startEmbeddedServer(DIST_DIR)
+  ).origin;
+  traceStartup('embedded-server-ready', { origin });
   registerDesktopHandlers(origin);
-  installProjectStoreIpc(origin);
+  const projectStoreIpcModule = new URL('./project-store-ipc.mjs', import.meta.url).href;
+  await (await import(projectStoreIpcModule) as typeof import('./project-store-ipc.ts'))
+    .installProjectStoreIpc(origin);
   installEditorAuthIpc(origin);
   installDesktopUpdateIpc(origin, {
     enabled: supportsDirectDesktopUpdates({
@@ -629,51 +706,53 @@ async function boot(): Promise<void> {
     }
     return importAgentPaths({ paths, projectId: value.projectId, knownHashes });
   }));
-  const hardware = await detectDesktopHardwareProfile(app);
   const desktopInference = installDesktopInferenceIpc(
     origin,
     join(runtimeProfile().rootDir, 'asr-models'),
-    hardware,
+    snapshotDesktopHardwareProfile(app),
   );
+  void hardwarePromise
+    .then((hardware) => {
+      desktopInference.updateHardware(hardware);
+      traceStartup('gpu-profile-ready', { gpus: hardware.gpus.length });
+    })
+    .catch((error) => console.warn(
+      `[desktop] complete GPU probe failed: ${error instanceof Error ? error.message : String(error)}`,
+    ));
   app.once('before-quit', () => desktopInference.dispose());
+  traceStartup('desktop-ipc-ready');
   console.log(`[desktop] ${devOrigin ? 'live source' : 'embedded server'} at ${origin}`);
-
-  const initialBounds = resolveInitialDesktopWindowBounds(screen.getPrimaryDisplay().workArea);
-  const win = new BrowserWindow({
-    ...initialBounds,
-    show: !SMOKE,
-    backgroundColor: '#1c1c1e',
-    title: PRODUCT_NAME,
-    ...desktopWindowFrameOptions(),
-    webPreferences: {
-      preload: PRELOAD_PATH,
-      contextIsolation: true,
-      nodeIntegration: false,
-      spellcheck: false,
-      // Same heartbeat reasoning as the transcript window above.
-      backgroundThrottling: false,
-    },
-  });
-  applyDesktopWindowFrame(win);
-  installResponsiveWindowScale(win);
-  mainWindow = win;
-  win.once('closed', () => {
-    mainWindow = null;
-    if (agentWorkbenchWindow && !agentWorkbenchWindow.isDestroyed()) {
-      agentWorkbenchCloseForDock = true;
-      agentWorkbenchWindow.close();
-    }
-  });
   installDesktopPageGuards(win, origin);
-  win.webContents.on('context-menu', (_event, params) => {
-    const template = buildTextContextMenuTemplate(params, desktopLocale);
-    if (!template.length) return;
-    Menu.buildFromTemplate(template).popup({ window: win });
-  });
+  if (win.isDestroyed()) return;
   await win.loadURL(`${origin}/`);
+  traceStartup('renderer-loaded');
+  if (STARTUP_TRACE) {
+    void win.webContents.executeJavaScript(`(() => {
+      const navigation = performance.getEntriesByType('navigation')[0];
+      const paints = Object.fromEntries(performance.getEntriesByType('paint').map((entry) => [entry.name, Math.round(entry.startTime * 10) / 10]));
+      return navigation ? {
+        domContentLoaded: Math.round(navigation.domContentLoadedEventEnd * 10) / 10,
+        loadEventEnd: Math.round(navigation.loadEventEnd * 10) / 10,
+        paints,
+      } : { paints };
+    })()`)
+      .then((metrics) => traceStartup('renderer-metrics', metrics))
+      .catch((error) => traceStartup('renderer-metrics-unavailable', String(error)));
+  }
+
+  if (app.isPackaged) {
+    setTimeout(() => {
+      if (win.isDestroyed()) return;
+      void ensurePackagedRenderRuntime().catch((error) => console.warn(
+        `[desktop] background render runtime preparation failed: ${error instanceof Error ? error.message : String(error)}`,
+      ));
+    }, PACKAGED_RENDER_WARMUP_DELAY_MS).unref();
+  }
 
   if (SMOKE) {
-    await runDesktopSmokeProbe(origin, win, SMOKE_RENDER);
+    const smokeProbeModule = new URL('./smoke-probe.mjs', import.meta.url).href;
+    await (await import(smokeProbeModule) as typeof import('./smoke-probe.ts'))
+      .runDesktopSmokeProbe(origin, win, SMOKE_RENDER);
     console.log('SMOKE-OK');
     app.exit(0);
   }

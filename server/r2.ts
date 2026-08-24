@@ -10,12 +10,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { stat, unlink } from 'node:fs/promises';
 import { Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import {
-  DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand,
-  PutObjectCommand, S3Client,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { NodeHttpHandler } from '@smithy/node-http-handler';
+import type { S3Client } from '@aws-sdk/client-s3';
 import { getKey, type KeyName } from './keystore.ts';
 import { outboundHttpAgent } from './outbound-proxy.ts';
 import { isIsolatedDevProfile } from './runtime-profile.ts';
@@ -73,26 +68,61 @@ export function r2Config(get: Get = fromKeystore, opts?: { ignoreEnabled?: boole
   return { accountId, accessKeyId, secretAccessKey, bucket };
 }
 
-function proxyHandler(): NodeHttpHandler | undefined {
+type R2Sdk = typeof import('@aws-sdk/client-s3')
+  & Pick<typeof import('@aws-sdk/s3-request-presigner'), 'getSignedUrl'>
+  & Pick<typeof import('@smithy/node-http-handler'), 'NodeHttpHandler'>;
+const S3_SDK_MODULE = '@aws-sdk/client-s3';
+const S3_PRESIGNER_MODULE = '@aws-sdk/s3-request-presigner';
+const SMITHY_HTTP_MODULE = '@smithy/node-http-handler';
+let r2SdkPromise: Promise<R2Sdk> | null = null;
+
+function loadR2Sdk(): Promise<R2Sdk> {
+  if (!r2SdkPromise) {
+    r2SdkPromise = Promise.all([
+      import(S3_SDK_MODULE),
+      import(S3_PRESIGNER_MODULE),
+      import(SMITHY_HTTP_MODULE),
+    ]).then(([s3, presigner, smithy]) => ({
+      ...s3,
+      getSignedUrl: presigner.getSignedUrl,
+      NodeHttpHandler: smithy.NodeHttpHandler,
+    })).catch((error) => {
+      r2SdkPromise = null;
+      throw error;
+    });
+  }
+  return r2SdkPromise;
+}
+
+async function proxyHandler() {
   const agent = outboundHttpAgent();
   if (!agent) return undefined;
+  const { NodeHttpHandler } = await loadR2Sdk();
   return new NodeHttpHandler({ httpsAgent: agent });
 }
 
 // The client is rebuilt as the configuration changes (key changes in the settings panel take effect immediately); the same configuration memory is reused.
 let cached: { key: string; client: S3Client } | null = null;
-function clientFor(cfg: R2Config): S3Client {
+async function clientFor(cfg: R2Config): Promise<S3Client> {
   const key = `${cfg.accountId}|${cfg.accessKeyId}|${cfg.secretAccessKey.slice(0, 6)}`;
   if (cached?.key === key) return cached.client;
+  const { S3Client } = await loadR2Sdk();
   const client = new S3Client({
     region: 'auto',
     endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
     forcePathStyle: true,
-    requestHandler: proxyHandler(),
+    requestHandler: await proxyHandler(),
   });
   cached = { key, client };
   return client;
+}
+
+async function resolvedClient(
+  cfg: R2Config,
+  client?: Pick<S3Client, 'send'>,
+): Promise<Pick<S3Client, 'send'>> {
+  return client ?? await clientFor(cfg);
 }
 
 export type UploadBody = Buffer | Uint8Array | Readable;
@@ -133,7 +163,8 @@ export async function putUploadObject(
   const cfg = r2Config();
   if (!cfg) return options ? 'off' : undefined;
   try {
-    await clientFor(cfg).send(new PutObjectCommand({
+    const { PutObjectCommand } = await loadR2Sdk();
+    await (await clientFor(cfg)).send(new PutObjectCommand({
       Bucket: cfg.bucket,
       Key: `uploads/${name}`,
       Body: body,
@@ -176,8 +207,9 @@ export async function putUploadFile(
 export async function deleteUploadObject(name: string, rollbackToken?: string): Promise<boolean> {
   const cfg = r2Config();
   if (!cfg) return false;
+  const { DeleteObjectCommand, HeadObjectCommand } = await loadR2Sdk();
   if (!rollbackToken) {
-    await clientFor(cfg).send(new DeleteObjectCommand({
+    await (await clientFor(cfg)).send(new DeleteObjectCommand({
       Bucket: cfg.bucket,
       Key: `uploads/${name}`,
     }));
@@ -185,7 +217,7 @@ export async function deleteUploadObject(name: string, rollbackToken?: string): 
   }
   let etag: string | undefined;
   try {
-    const head = await clientFor(cfg).send(new HeadObjectCommand({
+    const head = await (await clientFor(cfg)).send(new HeadObjectCommand({
       Bucket: cfg.bucket,
       Key: `uploads/${name}`,
     }));
@@ -197,7 +229,7 @@ export async function deleteUploadObject(name: string, rollbackToken?: string): 
     throw error;
   }
   try {
-    await clientFor(cfg).send(new DeleteObjectCommand({
+    await (await clientFor(cfg)).send(new DeleteObjectCommand({
       Bucket: cfg.bucket,
       Key: `uploads/${name}`,
       IfMatch: etag,
@@ -226,7 +258,8 @@ export async function getUploadObject(name: string): Promise<R2Object | null> {
   const cfg = r2Config();
   if (!cfg) return null;
   try {
-    const res = await clientFor(cfg).send(new GetObjectCommand({ Bucket: cfg.bucket, Key: `uploads/${name}` }));
+    const { GetObjectCommand } = await loadR2Sdk();
+    const res = await (await clientFor(cfg)).send(new GetObjectCommand({ Bucket: cfg.bucket, Key: `uploads/${name}` }));
     const bytes = await res.Body?.transformToByteArray();
     if (!bytes) return null;
     const body = Buffer.from(bytes);
@@ -277,10 +310,12 @@ async function deleteOversizedUploadObject(
   expectedEtag?: string,
   options?: R2DownloadOptions,
 ): Promise<boolean> {
+  const { DeleteObjectCommand, HeadObjectCommand } = await loadR2Sdk();
+  const client = await resolvedClient(cfg, options?.client);
   let etag = expectedEtag;
   if (!etag) {
     try {
-      const head = await (options?.client ?? clientFor(cfg)).send(new HeadObjectCommand({
+      const head = await client.send(new HeadObjectCommand({
         Bucket: cfg.bucket,
         Key: `uploads/${name}`,
       }));
@@ -293,7 +328,7 @@ async function deleteOversizedUploadObject(
   }
   if (!etag) return false;
   try {
-    await (options?.client ?? clientFor(cfg)).send(new DeleteObjectCommand({
+    await client.send(new DeleteObjectCommand({
       Bucket: cfg.bucket,
       Key: `uploads/${name}`,
       IfMatch: etag,
@@ -339,7 +374,9 @@ export async function getUploadObjectToFile(
   const signal = options?.signal;
   try {
     signal?.throwIfAborted();
-    const res = await (options?.client ?? clientFor(cfg)).send(
+    const { GetObjectCommand } = await loadR2Sdk();
+    const client = await resolvedClient(cfg, options?.client);
+    const res = await client.send(
       new GetObjectCommand({ Bucket: cfg.bucket, Key: `uploads/${name}` }),
       { abortSignal: signal },
     );
@@ -410,13 +447,14 @@ export async function presignPutUpload(
 ): Promise<PresignedUpload | null> {
   const cfg = r2Config();
   if (!cfg || !r2PresignEnabled()) return null;
+  const { PutObjectCommand, getSignedUrl } = await loadR2Sdk();
   const key = `uploads/${name}`;
   const cmd = new PutObjectCommand({
     Bucket: cfg.bucket,
     Key: key,
     ...(contentType ? { ContentType: contentType } : {}),
   });
-  const uploadUrl = await getSignedUrl(clientFor(cfg), cmd, { expiresIn });
+  const uploadUrl = await getSignedUrl(await clientFor(cfg), cmd, { expiresIn });
   return {
     uploadUrl,
     path: `/media/uploads/${name}`,
@@ -433,9 +471,10 @@ export async function presignGetUpload(
 ): Promise<{ downloadUrl: string; fileKey: string; expiresIn: number } | null> {
   const cfg = r2Config();
   if (!cfg || !r2PresignEnabled()) return null;
+  const { GetObjectCommand, getSignedUrl } = await loadR2Sdk();
   const key = `uploads/${name}`;
   const cmd = new GetObjectCommand({ Bucket: cfg.bucket, Key: key });
-  const downloadUrl = await getSignedUrl(clientFor(cfg), cmd, { expiresIn });
+  const downloadUrl = await getSignedUrl(await clientFor(cfg), cmd, { expiresIn });
   return { downloadUrl, fileKey: key, expiresIn };
 }
 
@@ -445,7 +484,8 @@ export async function r2Probe(get: Get): Promise<Response> {
   const cfg = r2Config(get, { ignoreEnabled: true });
   if (!cfg) return new Response('missing config', { status: 400 });
   try {
-    await clientFor(cfg).send(new HeadBucketCommand({ Bucket: cfg.bucket }));
+    const { HeadBucketCommand } = await loadR2Sdk();
+    await (await clientFor(cfg)).send(new HeadBucketCommand({ Bucket: cfg.bucket }));
     return new Response('', { status: 200 });
   } catch (err) {
     const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;

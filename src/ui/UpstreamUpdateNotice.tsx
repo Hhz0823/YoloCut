@@ -22,7 +22,12 @@ export function UpstreamUpdateNotice() {
     getUpstreamUpdateState,
   );
 
-  useEffect(() => { startAutomaticUpstreamUpdateCheck(); }, []);
+  useEffect(() => {
+    // Release metadata is non-critical startup work and may touch the network or
+    // lazily load electron-updater in the desktop host.
+    const timer = window.setTimeout(startAutomaticUpstreamUpdateCheck, 20_000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   if (!update.visible) return null;
 

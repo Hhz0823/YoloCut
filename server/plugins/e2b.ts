@@ -8,7 +8,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-import { Sandbox } from '@e2b/code-interpreter';
+import type { Sandbox } from '@e2b/code-interpreter';
 
 import { isSafeUploadName, resolveUploadFile, uploadDir } from '../media-dir.ts';
 import { PRODUCT_ASSETS_DIR, resolveProductAsset } from '../product-assets.ts';
@@ -102,9 +102,12 @@ function asCommandResult(error: unknown): { stdout: string; stderr: string; exit
   throw error;
 }
 
-function createSandbox(options: E2bOptions, timeoutMs: number): Promise<Sandbox> {
+async function createSandbox(options: E2bOptions, timeoutMs: number): Promise<Sandbox> {
+  const { Sandbox: SandboxRuntime } = await import('@e2b/code-interpreter');
   const createOpts = { apiKey: options.apiKey, timeoutMs: Math.min(timeoutMs, MAX_TIMEOUT) };
-  return options.template ? Sandbox.create(options.template, createOpts) : Sandbox.create(createOpts);
+  return options.template
+    ? SandboxRuntime.create(options.template, createOpts)
+    : SandboxRuntime.create(createOpts);
 }
 
 // Body of POST /e2b/transcode-alpha: { source } is a /media/... path or public URL.

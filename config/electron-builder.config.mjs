@@ -2,7 +2,7 @@
 // Run npm run desktop:dist(:mac-x64 / :win). The pipeline is Vite build → esbuild main process
 // → prebuild Remotion bundle → prepare target binaries → electron-builder.
 // Notes:
-// - files includes only the main-process bundle; electron-builder collects production node_modules automatically.
+// - files includes the small main-process entry plus lazily loaded host bundles; electron-builder collects production node_modules automatically.
 //   @remotion/renderer is required at runtime, while @remotion/bundler is used only during prebuild.
 //   Keep only the CC_EB_TARGET compositor package because each one is about 180 MB.
 // - asar stays disabled because @remotion/renderer chmods and spawns the compositor at its resolved path.
@@ -91,6 +91,10 @@ export default {
   publish,
   files: [
     'desktop-dist/main.mjs',
+    'desktop-dist/embedded-server.mjs',
+    'desktop-dist/project-store-ipc.mjs',
+    'desktop-dist/smoke-probe.mjs',
+    'desktop-dist/remotion-render.mjs',
     'desktop-dist/preload.cjs',
     ...nativeInferenceWorkers,
     'package.json',

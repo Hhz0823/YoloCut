@@ -106,8 +106,24 @@ export function useAppRoute(): AppRoute {
 export function useAgentBackendSync(): void {
   useEffect(() => {
     let alive = true;
-    void syncAgentBackends(() => alive);
-    return () => { alive = false; };
+    let idleCallback: number | null = null;
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const timer = window.setTimeout(() => {
+      const run = () => {
+        idleCallback = null;
+        if (alive) void syncAgentBackends(() => alive);
+      };
+      idleCallback = idleWindow.requestIdleCallback?.(run, { timeout: 4_000 }) ?? null;
+      if (idleCallback === null) run();
+    }, 1_500);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      if (idleCallback !== null) idleWindow.cancelIdleCallback?.(idleCallback);
+    };
   }, []);
 }
 

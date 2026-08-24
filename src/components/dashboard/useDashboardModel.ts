@@ -51,8 +51,9 @@ export interface DashboardModel {
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
-const THUMB_RENDER_CONCURRENCY = 2;
+const THUMB_RENDER_CONCURRENCY = 1;
 const THUMB_RENDER_VERSION = 1;
+const THUMB_RENDER_DELAY_MS = 4_000;
 const thumbKey = (project: ProjectMeta) => project.updatedAt + THUMB_RENDER_VERSION;
 
 export function relativeProjectTime(ms: number, translate: Translate): string {
@@ -87,12 +88,16 @@ async function hydrateProjectPosters(
   rendering: Set<string>,
   setThumbs: Dispatch<SetStateAction<Record<string, string>>>,
   isAlive: () => boolean,
+  renderMissing: boolean,
 ): Promise<void> {
   const active = projects.filter((project) => !project.deletedAt);
   const cached = await Promise.all(active.map(async (project) => ({ project, thumb: await loadProjectThumb(project.id) })));
   if (!isAlive()) return;
-  setThumbs(Object.fromEntries(cached.filter(({ project, thumb }) => thumb?.key === thumbKey(project))
+  // A stale cached poster is still a better first paint than a placeholder.
+  // It is replaced after the dashboard has been idle long enough to render.
+  setThumbs(Object.fromEntries(cached.filter(({ thumb }) => Boolean(thumb?.dataUrl))
     .map(({ project, thumb }) => [project.id, thumb!.dataUrl])));
+  if (!renderMissing) return;
   const queue = cached.filter(({ project, thumb }) => thumb?.key !== thumbKey(project)
     && !rendering.has(`${project.id}@${thumbKey(project)}`));
   let cursor = 0;
@@ -121,8 +126,48 @@ function useProjectPosters(projects: ProjectMeta[]): Readonly<Record<string, str
   const renderingRef = useRef(new Set<string>());
   useEffect(() => {
     let alive = true;
-    void hydrateProjectPosters(projects, renderingRef.current, setThumbs, () => alive);
-    return () => { alive = false; };
+    let timer: number | null = null;
+    let idleCallback: number | null = null;
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const isAlive = () => alive;
+    void hydrateProjectPosters(projects, renderingRef.current, setThumbs, isAlive, false);
+
+    const render = () => {
+      if (!alive || document.visibilityState === 'hidden') return;
+      const run = () => {
+        idleCallback = null;
+        if (alive && document.visibilityState === 'visible') void hydrateProjectPosters(
+          projects,
+          renderingRef.current,
+          setThumbs,
+          isAlive,
+          true,
+        );
+      };
+      idleCallback = idleWindow.requestIdleCallback?.(run, { timeout: 3_000 }) ?? null;
+      if (idleCallback === null) run();
+    };
+    const schedule = () => {
+      if (!alive || timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        render();
+      }, THUMB_RENDER_DELAY_MS);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') schedule();
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      alive = false;
+      if (timer !== null) window.clearTimeout(timer);
+      if (idleCallback !== null) idleWindow.cancelIdleCallback?.(idleCallback);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [projects]);
   return thumbs;
 }

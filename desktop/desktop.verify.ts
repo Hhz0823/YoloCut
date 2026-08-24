@@ -121,7 +121,7 @@ async function tick(): Promise<void> { await new Promise((r) => setTimeout(r, 0)
   assert.match(smoke, /const LOOPBACK_DISPATCHER = new Agent\(\)/);
   assert.equal(
     smoke.match(/dispatcher: LOOPBACK_DISPATCHER/g)?.length,
-    4,
+    5,
     'every loopback smoke fetch bypasses the global outbound proxy',
   );
   assert.match(

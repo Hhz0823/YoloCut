@@ -51,6 +51,7 @@ interface ObservedOwner {
 }
 
 export interface InstalledDesktopInference {
+  updateHardware(hardware: DesktopHardwareCapabilities): void;
   dispose(): void;
 }
 
@@ -90,7 +91,9 @@ function requestInputBytes(request: object): number {
 class DesktopInferenceState {
   private readonly trustedOrigin: string;
   private readonly cacheDir: string;
-  private readonly hardware?: DesktopHardwareCapabilities;
+  private hardware?: DesktopHardwareCapabilities;
+  private hardwareRefreshPending = false;
+  private disposed = false;
   private services: NativeServices;
   private enabled = false;
   private readonly budget = new NativeInferenceBudget();
@@ -130,6 +133,13 @@ class DesktopInferenceState {
     if (!value) this.resetServices();
   }
 
+  updateHardware(hardware: DesktopHardwareCapabilities): void {
+    if (this.disposed) return;
+    this.hardware = hardware;
+    this.hardwareRefreshPending = true;
+    this.applyPendingHardwareRefresh();
+  }
+
   async request<T>(
     event: IpcMainInvokeEvent,
     requestId: string,
@@ -151,6 +161,7 @@ class DesktopInferenceState {
     } finally {
       releaseResidency?.();
       this.budget.release(requestId);
+      this.applyPendingHardwareRefresh();
     }
   }
 
@@ -163,6 +174,8 @@ class DesktopInferenceState {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.enabled = false;
     for (const requestId of this.budget.requestIds()) this.cancelServices(requestId);
     this.disposeServices();
@@ -224,22 +237,22 @@ class DesktopInferenceState {
   private evictService(kind: NativeInferenceKind): void {
     if (kind === 'asr') {
       this.services.asr.dispose();
-      this.services = { ...this.services, asr: new NativeAsrService({ cacheDir: this.cacheDir }) };
+      this.services = { ...this.services, asr: new NativeAsrService({ cacheDir: this.cacheDir, hardware: this.hardware }) };
     } else if (kind === 'semantic') {
       this.services.semantic.dispose();
       this.services = {
         ...this.services,
-        semantic: new NativeSemanticService({ origin: this.trustedOrigin, cacheDir: this.cacheDir }),
+        semantic: new NativeSemanticService({ origin: this.trustedOrigin, cacheDir: this.cacheDir, hardware: this.hardware }),
       };
     } else if (kind === 'clap') {
       this.services.clap.dispose();
       this.services = {
         ...this.services,
-        clap: new NativeClapService({ origin: this.trustedOrigin, cacheDir: this.cacheDir }),
+        clap: new NativeClapService({ origin: this.trustedOrigin, cacheDir: this.cacheDir, hardware: this.hardware }),
       };
     } else {
       this.services.rhythm.dispose();
-      this.services = { ...this.services, rhythm: new NativeRhythmService({ cacheDir: this.cacheDir }) };
+      this.services = { ...this.services, rhythm: new NativeRhythmService({ cacheDir: this.cacheDir, hardware: this.hardware }) };
     }
   }
 
@@ -249,6 +262,12 @@ class DesktopInferenceState {
     this.disposeServices();
     this.services = createServices(this.trustedOrigin, this.cacheDir, this.hardware);
     this.residency.clear();
+    this.hardwareRefreshPending = false;
+  }
+
+  private applyPendingHardwareRefresh(): void {
+    if (this.disposed || !this.hardwareRefreshPending || this.budget.requestIds().length > 0) return;
+    this.resetServices();
   }
 }
 
@@ -308,6 +327,7 @@ export function installDesktopInferenceIpc(
   const state = new DesktopInferenceState(trustedOrigin, cacheDir, hardware);
   registerInferenceHandlers(state);
   return {
+    updateHardware: (hardware) => state.updateHardware(hardware),
     dispose: () => {
       for (const channel of Object.values(DESKTOP_INFERENCE_CHANNELS)) {
         if (channel !== DESKTOP_INFERENCE_CHANNELS.progress) ipcMain.removeHandler(channel);

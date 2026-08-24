@@ -5,11 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 
-import { validatePack } from "../../src/plugins/validate.ts";
 import { withExportPermit } from "./export-runtime.ts";
-
-// @ts-expect-error — plain .mjs render pipeline has no .d.ts
-import { renderTimeline, renderTimelineStills } from "../../remotion/render.mjs";
+import { renderTimeline, renderTimelineStills } from "./export-rendering.ts";
 
 const MAX_BODY_BYTES = 24 * 1024 * 1024;
 const POSTER_PROGRESS = 0.42;
@@ -79,9 +76,7 @@ function parseRequest(value: unknown) {
   if (targetDataUrl && !COVER_RE.test(targetDataUrl)) {
     throw new Error("valid transition target image is required");
   }
-  const validated = validatePack(input.pack);
-  if (!validated.ok) throw new Error(validated.errors.join("; "));
-  return { category, coverDataUrl, targetDataUrl, pack: validated.pack };
+  return { category, coverDataUrl, targetDataUrl, pack: input.pack };
 }
 
 function sendError(res: ServerResponse, status: number, message: string): void {
@@ -94,6 +89,10 @@ async function renderPreview(
   server: ViteDevServer,
   input: ReturnType<typeof parseRequest>,
 ) {
+  const { validatePack } = await import("../../src/plugins/validate.ts");
+  const validated = validatePack(input.pack);
+  if (!validated.ok) throw new Error(validated.errors.join("; "));
+  const pack = validated.pack;
   const output = join(tmpdir(), `yolocut-preview-${randomUUID()}.webm`);
   let poster = Buffer.alloc(0);
   try {
@@ -102,14 +101,14 @@ async function renderPreview(
         "/src/plugins/resourcePreview.ts",
       ) as {
         buildResourcePreviewState: (
-          pack: typeof input.pack,
+          previewPack: typeof pack,
           category: PreviewCategory,
           coverDataUrl: string,
           targetDataUrl?: string,
         ) => Promise<PreviewState>;
       };
       const state = await runtime.buildResourcePreviewState(
-        input.pack,
+        pack,
         input.category,
         input.coverDataUrl,
         input.targetDataUrl || undefined,

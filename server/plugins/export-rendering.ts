@@ -1,5 +1,7 @@
-import { dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { mkdir, rename, unlink } from 'node:fs/promises';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   resolveH264RenderOptions,
   resolveH264TargetBitrate,
@@ -22,18 +24,70 @@ import {
   retimeFps,
 } from './export-runtime.ts';
 import type { UpdateGenerationJob } from './generation-jobs.ts';
+import { ensureRenderRuntimeReady } from '../render-runtime-readiness.ts';
 
-// @ts-expect-error — plain .mjs render pipeline has no .d.ts
-import * as remotionRender from '../../remotion/render.mjs';
+type RemotionRenderModule = {
+  currentRenderConcurrency(): number;
+  remotionFfmpegPath(): string;
+  renderTimeline(options: Record<string, unknown>): Promise<unknown>;
+  renderTimelineStills(options: Record<string, unknown>): Promise<unknown>;
+  renderClip(options: Record<string, unknown>): Promise<unknown>;
+  setUploadsDirProvider(provider: () => string): void;
+};
 
-export const {
-  currentRenderConcurrency,
-  remotionFfmpegPath,
-  renderTimeline,
-  renderTimelineStills,
-  renderClip,
-  setUploadsDirProvider,
-} = remotionRender;
+let remotionRenderPromise: Promise<RemotionRenderModule> | null = null;
+let uploadsDirProvider: (() => string) | null = null;
+
+function remotionRenderModuleUrl(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(moduleDirectory, 'remotion-render.mjs'),
+    resolve(moduleDirectory, '../../remotion/render.mjs'),
+    resolve(moduleDirectory, '../remotion/render.mjs'),
+    resolve(process.cwd(), 'remotion/render.mjs'),
+  ];
+  const renderModule = candidates.find(existsSync);
+  if (!renderModule) throw new Error('Remotion render runtime is unavailable');
+  return pathToFileURL(renderModule).href;
+}
+
+async function loadRemotionRender(): Promise<RemotionRenderModule> {
+  if (!remotionRenderPromise) {
+    const moduleUrl = remotionRenderModuleUrl();
+    remotionRenderPromise = ensureRenderRuntimeReady()
+      .then(async () => import(moduleUrl) as Promise<RemotionRenderModule>)
+      .then((module) => {
+        if (uploadsDirProvider) module.setUploadsDirProvider(uploadsDirProvider);
+        return module;
+      })
+      .catch((error) => {
+        remotionRenderPromise = null;
+        throw error;
+      });
+  }
+  return remotionRenderPromise;
+}
+
+export function setUploadsDirProvider(provider: () => string): void {
+  uploadsDirProvider = provider;
+  if (remotionRenderPromise) {
+    void remotionRenderPromise
+      .then((module) => module.setUploadsDirProvider(provider))
+      .catch(() => undefined);
+  }
+}
+
+export async function renderTimeline(options: Record<string, unknown>): Promise<unknown> {
+  return (await loadRemotionRender()).renderTimeline(options);
+}
+
+export async function renderTimelineStills(options: Record<string, unknown>): Promise<unknown> {
+  return (await loadRemotionRender()).renderTimelineStills(options);
+}
+
+export async function renderClip(options: Record<string, unknown>): Promise<unknown> {
+  return (await loadRemotionRender()).renderClip(options);
+}
 
 export async function cleanupExportOutputs(paths: Array<string | null>): Promise<ExportCleanupStatus> {
   let cleanupStatus: ExportCleanupStatus = 'succeeded';
@@ -48,9 +102,9 @@ export async function cleanupExportOutputs(paths: Array<string | null>): Promise
 }
 
 export async function h264RenderOptions(codec: string) {
-  return codec === 'h264'
-    ? resolveH264RenderOptions(ffmpegBin(), remotionFfmpegPath())
-    : {};
+  if (codec !== 'h264') return {};
+  const remotionRender = await loadRemotionRender();
+  return resolveH264RenderOptions(ffmpegBin(), remotionRender.remotionFfmpegPath());
 }
 
 export async function renderExportPlan(
@@ -147,6 +201,10 @@ export async function renderExportPlan(
 }
 
 export async function exportCapabilities() {
-  const { h264Profile } = await resolveH264RenderOptions(ffmpegBin(), remotionFfmpegPath());
-  return { h264: h264Profile, renderConcurrency: currentRenderConcurrency() };
+  const remotionRender = await loadRemotionRender();
+  const { h264Profile } = await resolveH264RenderOptions(
+    ffmpegBin(),
+    remotionRender.remotionFfmpegPath(),
+  );
+  return { h264: h264Profile, renderConcurrency: remotionRender.currentRenderConcurrency() };
 }
