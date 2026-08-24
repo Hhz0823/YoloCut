@@ -204,6 +204,23 @@ assert.doesNotMatch(
   'CI artifact upload must not retain updater metadata or non-installer archives',
 );
 assert.match(workflow, /EXPECTED_VERSION="\$\{GITHUB_REF_NAME#v\}"/, 'release gate must derive its package version');
+assert.match(
+  workflow,
+  /artifact_run_id:[\s\S]*?type: string/,
+  'the desktop workflow must expose an explicit validated-artifact retry input',
+);
+assert.match(workflow, /if: inputs\.artifact_run_id == ''/, 'a release retry must skip validation and packaging');
+assert.match(
+  workflow,
+  /inputs\.artifact_run_id != '' \|\| needs\.package\.result == 'success'/,
+  'publishing must require either freshly successful packages or an explicit artifact run',
+);
+assert.match(
+  workflow,
+  /run-id: \$\{\{ inputs\.artifact_run_id \|\| github\.run_id \}\}/,
+  'a release retry must download the previously validated native artifacts',
+);
+assert.match(workflow, /github-token: \$\{\{ github\.token \}\}/);
 for (const installer of ['x64.exe', 'arm64.dmg', 'x64.dmg']) {
   assert.ok(
     workflow.includes(`release-files/YoloCut-v\${EXPECTED_VERSION}-${installer}`),
@@ -344,6 +361,16 @@ assert.match(
   workflow,
   /case "\$asset_name" in[\s\S]*?\*\.exe\|\*\.dmg\)[\s\S]*?gh api --method DELETE/,
   'the draft must delete every remote asset that is not an EXE or DMG',
+);
+assert.match(
+  workflow,
+  /gh release view "\$GITHUB_REF_NAME"[\s\S]*?--json databaseId[\s\S]*?--jq '\.databaseId'/,
+  'draft release cleanup must resolve its database ID through gh release view',
+);
+assert.doesNotMatch(
+  workflow,
+  /releases\/tags\/\$GITHUB_REF_NAME/,
+  'draft releases must not use the published-release-only tag REST endpoint',
 );
 assert.doesNotMatch(
   workflow,

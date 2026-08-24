@@ -6,6 +6,12 @@ name: desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_run_id:
+        description: Reuse validated desktop artifacts from this workflow run ID (release retry only)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -17,6 +23,7 @@ concurrency:
 jobs:
   validate:
     name: Validate
+    if: inputs.artifact_run_id == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -196,8 +203,13 @@ jobs:
 
   release:
     name: Publish Release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    if: >-
+      ${{
+        always() &&
+        startsWith(github.ref, 'refs/tags/v') &&
+        (inputs.artifact_run_id != '' || needs.package.result == 'success')
+      }}
+    needs: [validate, package]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -205,12 +217,14 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Download installers
+      - name: Download validated desktop artifacts
         uses: actions/download-artifact@v7
         with:
           pattern: desktop-*
           path: release-files
           merge-multiple: true
+          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Stage installer-only release assets
         shell: bash
@@ -276,9 +290,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_id="$(gh api \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
-            --jq '.id')"
+          release_id="$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId \
+            --jq '.databaseId')"
           while IFS=$'\t' read -r asset_id asset_name; do
             case "$asset_name" in
               *.exe|*.dmg) ;;
